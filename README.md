@@ -107,6 +107,17 @@ The tray menu has one-click installers:
 
 After wiring, restart your agent host once. Then the agent will call `process_video` automatically whenever the user mentions a YouTube URL or asks for a transcript.
 
+## Quickstart: cookies.txt for transcripts
+
+**TL;DR for the impatient:**
+
+1. Open Chrome (or any Chromium browser), install [«Get cookies.txt LOCALLY»](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc).
+2. Open `https://www.youtube.com` and **make sure you are signed in**.
+3. Click the extension icon → **Export** → `youtube.com_cookies.txt` lands in `~/Downloads/`.
+4. In the YT-sub tray menu (🎬): **Cookies for yt-dlp → Load cookies.txt…** → pick the file.
+
+After this, transcripts work for any YouTube video. Re-export when YouTube starts rejecting again (usually weeks later). Full background and edge cases below.
+
 ## Bypassing YouTube's bot-protection (cookies)
 
 Sometimes both transcript backends hit YouTube's IP-based blocking ("Sign in to confirm you're not a bot" / "YouTube is blocking requests from your IP"). This happens to residential IPs that look suspicious to Google — too many requests, datacenter IP ranges, or just bad luck. Pass real browser cookies from a logged-in YouTube session and YouTube treats the request as authenticated, which clears the block.

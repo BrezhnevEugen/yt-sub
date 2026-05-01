@@ -162,6 +162,8 @@ class YTSubApp(rumps.App):
     def _refresh_menu(self) -> None:
         signed_in = self.client.is_authenticated()
         has_secret = CLIENT_SECRET_PATH.exists()
+        self.menu["Load client_secret.json…"].state = 1 if has_secret else 0
+        self.menu["Sign in with Google"].state = 1 if signed_in else 0
         self.menu["Sign in with Google"].set_callback(
             self.sign_in if (has_secret and not signed_in) else None
         )
