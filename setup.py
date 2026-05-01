@@ -40,6 +40,10 @@ OPTIONS = {
         'pydantic_core',
         'httpx',
         'httpcore',
+        # certifi provides the CA bundle for urllib's SSL context inside
+        # the py2app bundle (otherwise CERTIFICATE_VERIFY_FAILED on any
+        # https call from the frozen Python).
+        'certifi',
     ],
     # `mcp_server` is a separate entry point (not imported by app.py), so
     # we explicitly include it to pull its imports into the graph too.

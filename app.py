@@ -674,8 +674,18 @@ class YTSubApp(rumps.App):
         subprocess.run(["open", "https://github.com/BrezhnevEugen/yt-sub"])
 
     def check_for_updates(self, _) -> None:
+        import ssl
         import urllib.request
         try:
+            # py2app's bundled Python has no link to the system trust
+            # store, so vanilla urlopen blows up with CERTIFICATE_VERIFY_FAILED.
+            # certifi ships an actual CA bundle and is already pulled
+            # in transitively by the google-auth / requests stack.
+            try:
+                import certifi
+                ctx = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                ctx = ssl.create_default_context()
             req = urllib.request.Request(
                 "https://api.github.com/repos/BrezhnevEugen/yt-sub/releases/latest",
                 headers={
@@ -683,7 +693,7 @@ class YTSubApp(rumps.App):
                     "Accept": "application/vnd.github+json",
                 },
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                 data = json.load(resp)
         except Exception as e:
             rumps.alert(title="Update check failed", message=str(e))
