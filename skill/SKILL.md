@@ -35,6 +35,17 @@ The `yt-sub` MCP server provides:
 5. If `transcript_error` is set, subtitles are not available — say so explicitly and proceed with metadata only.
 6. Use the `transcript_text` for whatever the user asked (summarize, translate, extract quotes, find timestamps, etc.).
 
+### When transcripts fail with bot-protection
+
+`transcript_error` mentioning *"YouTube is blocking requests from your IP"*, *"Sign in to confirm you're not a bot"*, or *"Operation not permitted"* (Safari TCC) means YouTube refused the un-authenticated request. Recovery flow:
+
+1. Call `get_cookies_file()` and `get_cookies_browser()` to see the current state.
+2. If neither is set, ask the user to either pick a cookies.txt via the tray (**Cookies for yt-dlp → Load cookies.txt…**) or call `set_cookies_browser("firefox")` if they have Firefox logged in. Point them at the README section *"Bypassing YouTube's bot-protection (cookies)"* for the export how-to: <https://github.com/BrezhnevEugen/yt-sub#bypassing-youtubes-bot-protection-cookies>.
+3. After the user reports they've loaded cookies (or you've called `set_cookies_file(path)` with a path they handed you), retry `process_video`. The cookies.txt path **overrides** browser source when both are configured.
+4. If it still fails, the cookies.txt is likely from a logged-out session — ask them to verify they're signed in to YouTube in the browser before re-exporting.
+
+Do **not** repeatedly retry `process_video` without changing state — every attempt counts toward the IP-block budget.
+
 ## Output dir layout
 
 `~/YT-sub/output/<videoId>/` contains:
