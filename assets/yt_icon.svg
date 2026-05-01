@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="body" x1="0" y1="96" x2="0" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#da372b"/>
+      <stop offset="1" stop-color="#b3231a"/>
+    </linearGradient>
+    <filter id="shadow" x="-12%" y="-10%" width="124%" height="130%">
+      <feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#000" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect x="102" y="102" width="820" height="820" rx="195" fill="url(#body)" filter="url(#shadow)"/>
+  <rect x="102" y="102" width="820" height="820" rx="195" fill="none" stroke="#941f18" stroke-width="26"/>
+  <rect x="143" y="143" width="738" height="738" rx="154" fill="none" stroke="#ff5a4b" stroke-opacity=".22" stroke-width="10"/>
+  <path d="M410 358c0-28 30-45 54-30l214 132c25 15 25 51 0 66L464 658c-24 15-54-2-54-30V358z" fill="#fff"/>
+  <g fill="#f7d2d2" fill-opacity=".76">
+    <rect x="594" y="655" width="226" height="42" rx="21"/>
+    <rect x="594" y="740" width="82" height="42" rx="21"/>
+    <rect x="706" y="740" width="114" height="42" rx="21"/>
+    <path d="M594 825h144c17 0 30 13 30 30v45l-54-45H594c-17 0-30-13-30-30s13-30 30-30z"/>
+  </g>
+</svg>

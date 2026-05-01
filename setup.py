@@ -11,7 +11,11 @@ APP = ['app.py']
 
 DATA_FILES = [
     ('skill', ['skill/SKILL.md']),
-    ('assets', ['assets/yt_icon.png', 'assets/yt_icon.icns']),
+    ('assets', [
+        'assets/yt_icon.png',
+        'assets/yt_icon@2x.png',
+        'assets/yt_icon.icns',
+    ]),
 ]
 
 OPTIONS = {

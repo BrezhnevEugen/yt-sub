@@ -74,26 +74,35 @@ def ensure_icon() -> Path:
 
 
 def ensure_icns() -> Path:
-    """Render a multi-resolution iconset and bundle it as a .icns via
-    iconutil. Idempotent. Used by release.sh; not called from a frozen
-    bundle, only at build time from source."""
+    """Bundle the iconset into a .icns via iconutil. If the iconset
+    already has all expected PNGs (e.g. provided by a designer) we use
+    them as-is and never overwrite. Only missing sizes get rendered
+    from the placeholder Cocoa drawing. Regenerates .icns whenever any
+    iconset PNG is newer than the cached .icns."""
     icns_path = _assets_dir() / "yt_icon.icns"
-    if icns_path.exists():
-        return icns_path
-
     iconset_dir = _assets_dir() / "yt_icon.iconset"
-    icns_path.parent.mkdir(parents=True, exist_ok=True)
-    if iconset_dir.exists():
-        for f in iconset_dir.iterdir():
-            f.unlink()
-    else:
-        iconset_dir.mkdir(parents=True, exist_ok=True)
 
-    # Apple iconset spec: 16, 32, 128, 256, 512 + @2x variants.
+    spec = []
     for size in (16, 32, 128, 256, 512):
-        _render_png(iconset_dir / f"icon_{size}x{size}.png", size)
-        _render_png(iconset_dir / f"icon_{size}x{size}@2x.png", size * 2)
+        spec.append((iconset_dir / f"icon_{size}x{size}.png", size))
+        spec.append((iconset_dir / f"icon_{size}x{size}@2x.png", size * 2))
 
+    if icns_path.exists() and iconset_dir.exists():
+        icns_mtime = icns_path.stat().st_mtime
+        newer = any(
+            p.exists() and p.stat().st_mtime > icns_mtime for p, _ in spec
+        )
+        if not newer:
+            return icns_path
+
+    iconset_dir.mkdir(parents=True, exist_ok=True)
+    icns_path.parent.mkdir(parents=True, exist_ok=True)
+    for path, px in spec:
+        if not path.exists():
+            _render_png(path, px)
+
+    if icns_path.exists():
+        icns_path.unlink()
     subprocess.run(
         ["iconutil", "-c", "icns", str(iconset_dir), "-o", str(icns_path)],
         check=True,
