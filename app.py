@@ -94,49 +94,79 @@ class YTSubApp(rumps.App):
         self._last_output: Optional[Path] = None
         self._busy = False
 
+        # Header + status (both disabled, just informative).
         self._header = rumps.MenuItem(
             f"YT-sub v{__version__} — YouTube metadata + transcripts"
         )
         self._status = rumps.MenuItem("…")
 
+        # Top-level primary action.
+        self._mi_process = rumps.MenuItem("Process URL…", callback=self.process_url)
+
+        # Account submenu.
+        self._mi_load_secret = rumps.MenuItem(
+            "Load client_secret.json…", callback=self.load_client_secret
+        )
+        self._mi_signin = rumps.MenuItem("Sign in with Google", callback=self.sign_in)
+        self._mi_signout = rumps.MenuItem("Sign out", callback=self.sign_out)
+        self._mi_login_toggle = rumps.MenuItem(
+            "Auto-start on login", callback=self.toggle_login_item
+        )
+        account_menu = rumps.MenuItem("Account")
+        account_menu.add(self._mi_load_secret)
+        account_menu.add(self._mi_signin)
+        account_menu.add(self._mi_signout)
+        account_menu.add(rumps.separator)
+        account_menu.add(self._mi_login_toggle)
+
+        # Cookies submenu (mostly preserved from before).
         self._cookies_menu = rumps.MenuItem("Cookies for yt-dlp")
         self._cookies_items = {}
-        load_item = rumps.MenuItem(
+        load_cookies = rumps.MenuItem(
             "Load cookies.txt…", callback=self.load_cookies_file
         )
-        clear_item = rumps.MenuItem(
+        clear_cookies = rumps.MenuItem(
             "Clear cookies.txt", callback=self.clear_cookies_file
         )
-        self._cookies_items["__load"] = load_item
-        self._cookies_items["__clear"] = clear_item
-        self._cookies_menu.add(load_item)
-        self._cookies_menu.add(clear_item)
+        self._cookies_items["__load"] = load_cookies
+        self._cookies_items["__clear"] = clear_cookies
+        self._cookies_menu.add(load_cookies)
+        self._cookies_menu.add(clear_cookies)
         self._cookies_menu.add(rumps.separator)
         for label in ("(disabled)",) + yt_config.SUPPORTED_BROWSERS:
             mi = rumps.MenuItem(label, callback=self.set_cookies_browser)
             self._cookies_items[label] = mi
             self._cookies_menu.add(mi)
 
+        # Output submenu.
+        self._mi_open_last = rumps.MenuItem("Open last result", callback=self.open_last)
+        self._mi_open_output = rumps.MenuItem(
+            "Open output folder", callback=self.open_output
+        )
+        self._mi_stats = rumps.MenuItem("Statistics", callback=self.show_stats)
+        output_menu = rumps.MenuItem("Output")
+        output_menu.add(self._mi_open_last)
+        output_menu.add(self._mi_open_output)
+        output_menu.add(self._mi_stats)
+
+        # Agents submenu.
+        agents_menu = rumps.MenuItem("Agents")
+        agents_menu.add(rumps.MenuItem("Copy MCP config", callback=self.copy_mcp_config))
+        agents_menu.add(rumps.MenuItem("Install skill (~/.claude)", callback=self.install_skill_global))
+        agents_menu.add(rumps.MenuItem("Install skill in project…", callback=self.install_skill_in_project))
+        agents_menu.add(rumps.MenuItem("Copy skill to clipboard", callback=self.copy_skill_to_clipboard))
+
+        # Top-level: only sections + Process URL + Quit.
         self.menu = [
             self._header,
             self._status,
             None,
-            rumps.MenuItem("Process URL…", callback=self.process_url),
+            self._mi_process,
             None,
-            rumps.MenuItem("Load client_secret.json…", callback=self.load_client_secret),
-            rumps.MenuItem("Sign in with Google", callback=self.sign_in),
-            rumps.MenuItem("Sign out", callback=self.sign_out),
+            account_menu,
             self._cookies_menu,
-            None,
-            rumps.MenuItem("Open last result", callback=self.open_last),
-            rumps.MenuItem("Open output folder", callback=self.open_output),
-            rumps.MenuItem("Statistics", callback=self.show_stats),
-            None,
-            rumps.MenuItem("Auto-start on login", callback=self.toggle_login_item),
-            rumps.MenuItem("Copy MCP config", callback=self.copy_mcp_config),
-            rumps.MenuItem("Install skill (~/.claude)", callback=self.install_skill_global),
-            rumps.MenuItem("Install skill in project…", callback=self.install_skill_in_project),
-            rumps.MenuItem("Copy skill to clipboard", callback=self.copy_skill_to_clipboard),
+            output_menu,
+            agents_menu,
             None,
             rumps.MenuItem("Quit", callback=rumps.quit_application),
         ]
@@ -162,21 +192,18 @@ class YTSubApp(rumps.App):
     def _refresh_menu(self) -> None:
         signed_in = self.client.is_authenticated()
         has_secret = CLIENT_SECRET_PATH.exists()
-        self.menu["Load client_secret.json…"].state = 1 if has_secret else 0
-        self.menu["Sign in with Google"].state = 1 if signed_in else 0
-        self.menu["Sign in with Google"].set_callback(
+        self._mi_load_secret.state = 1 if has_secret else 0
+        self._mi_signin.state = 1 if signed_in else 0
+        self._mi_signin.set_callback(
             self.sign_in if (has_secret and not signed_in) else None
         )
-        self.menu["Sign out"].set_callback(self.sign_out if signed_in else None)
-        self.menu["Process URL…"].set_callback(
+        self._mi_signout.set_callback(self.sign_out if signed_in else None)
+        self._mi_process.set_callback(
             self.process_url if (signed_in and not self._busy) else None
         )
-        self.menu["Open last result"].set_callback(
-            self.open_last if self._last_output else None
-        )
+        self._mi_open_last.set_callback(self.open_last if self._last_output else None)
         try:
-            on = LAUNCH_AGENT_PATH.exists()
-            self.menu["Auto-start on login"].state = 1 if on else 0
+            self._mi_login_toggle.state = 1 if LAUNCH_AGENT_PATH.exists() else 0
         except Exception:
             pass
         try:
