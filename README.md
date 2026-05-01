@@ -25,13 +25,46 @@ A small macOS menu-bar utility that pulls **metadata + transcript** for any YouT
 
 ## Setup
 
-Requires macOS, Python 3.10+, and a Google Cloud OAuth client.
+Requires macOS 11+, Python 3.10+, and a Google Cloud OAuth client.
 
 ```bash
-git clone <this repo>
-cd YT-sub
-./run.sh                # creates .venv, installs deps, launches the tray
+git clone https://github.com/BrezhnevEugen/yt-sub.git
+cd yt-sub
+./install.sh --login        # install + auto-start on every login
 ```
+
+`install.sh` does everything:
+
+- creates `.venv` and installs dependencies
+- generates the menu-bar PNG and a multi-resolution `.icns`
+- builds and code-signs `YT-sub.app` (auto-detects your `Developer ID Application:` identity, falls back to ad-hoc if none)
+- copies it to `/Applications`
+- registers a per-user **LaunchAgent** at `~/Library/LaunchAgents/com.brezhnev.yt-sub.plist` — that's the canonical launcher (handles auto-restart on crash and, with `--login`, auto-start on login)
+- kicks off the tray immediately
+
+Other forms:
+
+```bash
+./install.sh                      # install, manual start only
+./install.sh --login --notarize   # full Apple notarization (no Gatekeeper prompt anywhere)
+./install.sh --uninstall          # stop + remove app + LaunchAgent
+./install.sh --help               # all flags
+```
+
+### Optional: full notarization
+
+If you have an Apple Developer ID and want the `.app` to pass Gatekeeper without any user prompt (useful when distributing the bundle), set up a notarytool keychain profile **once**:
+
+```bash
+xcrun notarytool store-credentials yt-sub-notarize \
+    --apple-id     your-apple-id@example.com \
+    --team-id      <YOUR_TEAM_ID> \
+    --password     <app-specific-password>
+```
+
+Generate the app-specific password at [appleid.apple.com](https://appleid.apple.com/) → Sign-In and Security → App-Specific Passwords. Find your team ID in the Developer ID identity name (the parenthesised code from `security find-identity -v -p codesigning`).
+
+Then run `./install.sh --login --notarize` — Apple scans + signs the bundle, the installer staples the ticket so it works offline.
 
 In Google Cloud Console:
 
