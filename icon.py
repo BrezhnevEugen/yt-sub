@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-ICON_PATH = ASSETS_DIR / "yt_icon.png"
-ICNS_PATH = ASSETS_DIR / "yt_icon.icns"
-ICONSET_DIR = ASSETS_DIR / "yt_icon.iconset"
+
+def _assets_dir() -> Path:
+    """Where bundled assets live. In a py2app bundle they're under
+    Contents/Resources/assets/ (placed there by DATA_FILES); in source
+    mode they're alongside icon.py."""
+    if getattr(sys, "frozen", False):
+        try:
+            from AppKit import NSBundle
+            rp = NSBundle.mainBundle().resourcePath()
+            if rp:
+                bundled = Path(rp) / "assets"
+                if bundled.exists() or not (Path(__file__).resolve().parent / "assets").exists():
+                    return bundled
+        except Exception:
+            pass
+    return Path(__file__).resolve().parent / "assets"
 
 
 def _render_png(out_path: Path, size: int) -> None:
@@ -49,34 +62,40 @@ def _render_png(out_path: Path, size: int) -> None:
 
 
 def ensure_icon() -> Path:
-    """Render the menu-bar icon as a 36px PNG. Idempotent."""
-    if ICON_PATH.exists():
-        return ICON_PATH
-    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-    _render_png(ICON_PATH, 36)
-    return ICON_PATH
+    """Return path to the menu-bar icon PNG. If it already exists (e.g.
+    bundled into the .app via DATA_FILES, or rendered during a previous
+    run in source mode) just return it. Otherwise render fresh."""
+    icon_path = _assets_dir() / "yt_icon.png"
+    if icon_path.exists():
+        return icon_path
+    icon_path.parent.mkdir(parents=True, exist_ok=True)
+    _render_png(icon_path, 36)
+    return icon_path
 
 
 def ensure_icns() -> Path:
     """Render a multi-resolution iconset and bundle it as a .icns via
-    iconutil. Idempotent."""
-    if ICNS_PATH.exists():
-        return ICNS_PATH
+    iconutil. Idempotent. Used by release.sh; not called from a frozen
+    bundle, only at build time from source."""
+    icns_path = _assets_dir() / "yt_icon.icns"
+    if icns_path.exists():
+        return icns_path
 
-    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-    if ICONSET_DIR.exists():
-        for f in ICONSET_DIR.iterdir():
+    iconset_dir = _assets_dir() / "yt_icon.iconset"
+    icns_path.parent.mkdir(parents=True, exist_ok=True)
+    if iconset_dir.exists():
+        for f in iconset_dir.iterdir():
             f.unlink()
     else:
-        ICONSET_DIR.mkdir(parents=True, exist_ok=True)
+        iconset_dir.mkdir(parents=True, exist_ok=True)
 
     # Apple iconset spec: 16, 32, 128, 256, 512 + @2x variants.
     for size in (16, 32, 128, 256, 512):
-        _render_png(ICONSET_DIR / f"icon_{size}x{size}.png", size)
-        _render_png(ICONSET_DIR / f"icon_{size}x{size}@2x.png", size * 2)
+        _render_png(iconset_dir / f"icon_{size}x{size}.png", size)
+        _render_png(iconset_dir / f"icon_{size}x{size}@2x.png", size * 2)
 
     subprocess.run(
-        ["iconutil", "-c", "icns", str(ICONSET_DIR), "-o", str(ICNS_PATH)],
+        ["iconutil", "-c", "icns", str(iconset_dir), "-o", str(icns_path)],
         check=True,
     )
-    return ICNS_PATH
+    return icns_path

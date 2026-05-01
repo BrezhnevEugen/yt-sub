@@ -22,6 +22,51 @@ if "--version" in sys.argv or "-V" in sys.argv:
     print(f"YT-sub {__version__}")
     sys.exit(0)
 
+
+# Single-instance guard for tray mode. Without this, double-clicking
+# the .app or running install.sh while it's already up gives you two
+# menu-bar icons and two LaunchAgents fighting over the auth token.
+def _single_instance_or_exit() -> None:
+    import os, atexit, subprocess as _sp
+    pid_file = Path.home() / ".config" / "yt-sub" / "yt-sub.pid"
+    if pid_file.exists():
+        try:
+            old_pid = int(pid_file.read_text().strip())
+        except Exception:
+            old_pid = -1
+        if old_pid > 0 and old_pid != os.getpid():
+            try:
+                os.kill(old_pid, 0)  # ESRCH if dead
+                # Live process — make sure it's actually our app, not a
+                # PID reused by something else.
+                cmd = _sp.run(
+                    ["ps", "-p", str(old_pid), "-o", "command="],
+                    capture_output=True, text=True,
+                ).stdout
+                if "app.py" in cmd or "YT-sub" in cmd:
+                    print(
+                        f"YT-sub already running (pid={old_pid}); exiting.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(0)
+            except OSError:
+                pass  # stale pid, fall through and overwrite
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(os.getpid()))
+
+    def _cleanup():
+        try:
+            if pid_file.exists() and pid_file.read_text().strip() == str(os.getpid()):
+                pid_file.unlink()
+        except Exception:
+            pass
+
+    atexit.register(_cleanup)
+
+
+_single_instance_or_exit()
+
+
 import rumps
 
 try:
@@ -46,6 +91,21 @@ LAUNCH_AGENT_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_L
 
 def _is_frozen() -> bool:
     return getattr(sys, "frozen", False) is not False
+
+
+def _resource_dir() -> Path:
+    """Where bundled data files (skill/, assets/) live. NSBundle's
+    resourcePath is correct in py2app builds; in source mode we just
+    use the project directory."""
+    if _is_frozen():
+        try:
+            from AppKit import NSBundle
+            rp = NSBundle.mainBundle().resourcePath()
+            if rp:
+                return Path(rp)
+        except Exception:
+            pass
+    return Path(__file__).resolve().parent
 
 
 def _bundle_launcher() -> Optional[Path]:
@@ -156,6 +216,12 @@ class YTSubApp(rumps.App):
         agents_menu.add(rumps.MenuItem("Install skill in project…", callback=self.install_skill_in_project))
         agents_menu.add(rumps.MenuItem("Copy skill to clipboard", callback=self.copy_skill_to_clipboard))
 
+        # About submenu.
+        about_menu = rumps.MenuItem("About")
+        about_menu.add(rumps.MenuItem("Check for updates…", callback=self.check_for_updates))
+        about_menu.add(rumps.separator)
+        about_menu.add(rumps.MenuItem("Open repository on GitHub", callback=self.open_repository))
+
         # Top-level: only sections + Process URL + Quit.
         self.menu = [
             self._header,
@@ -167,6 +233,7 @@ class YTSubApp(rumps.App):
             self._cookies_menu,
             output_menu,
             agents_menu,
+            about_menu,
             None,
             rumps.MenuItem("Quit", callback=rumps.quit_application),
         ]
@@ -398,7 +465,7 @@ class YTSubApp(rumps.App):
         rumps.notification("YT-sub", "Auto-start on login: OFF", "")
 
     def _skill_full(self) -> str:
-        src = Path(__file__).resolve().parent / "skill" / "SKILL.md"
+        src = _resource_dir() / "skill" / "SKILL.md"
         return src.read_text(encoding="utf-8")
 
     def _split_frontmatter(self, text: str) -> tuple[dict, str]:
@@ -423,7 +490,7 @@ class YTSubApp(rumps.App):
         return f"---\ndescription: {desc}\nalwaysApply: false\n---\n\n{body}"
 
     def install_skill_global(self, _) -> None:
-        src = Path(__file__).resolve().parent / "skill" / "SKILL.md"
+        src = _resource_dir() / "skill" / "SKILL.md"
         if not src.exists():
             rumps.alert(title="Skill source missing", message=f"Not found: {src}")
             return
@@ -602,6 +669,52 @@ class YTSubApp(rumps.App):
             pass
         self._refresh_menu()
         rumps.notification("YT-sub", "cookies.txt cleared", "")
+
+    def open_repository(self, _) -> None:
+        subprocess.run(["open", "https://github.com/BrezhnevEugen/yt-sub"])
+
+    def check_for_updates(self, _) -> None:
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                "https://api.github.com/repos/BrezhnevEugen/yt-sub/releases/latest",
+                headers={
+                    "User-Agent": f"YT-sub/{__version__}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.load(resp)
+        except Exception as e:
+            rumps.alert(title="Update check failed", message=str(e))
+            return
+
+        latest_raw = (data.get("tag_name") or "").lstrip("v").strip()
+        if not latest_raw:
+            rumps.alert(title="Update check failed", message="No releases found")
+            return
+
+        def _parts(s: str):
+            return tuple(int(x) for x in s.split(".") if x.isdigit())
+
+        if _parts(latest_raw) > _parts(__version__):
+            release_url = data.get("html_url") or "https://github.com/BrezhnevEugen/yt-sub/releases"
+            response = rumps.alert(
+                title=f"Update available: v{latest_raw}",
+                message=(
+                    f"You have v{__version__}.\n\n"
+                    "Open the GitHub release page to download the new DMG."
+                ),
+                ok="Open release page",
+                cancel="Later",
+            )
+            if response:
+                subprocess.run(["open", release_url])
+        else:
+            rumps.alert(
+                title="You're up to date",
+                message=f"v{__version__} is the latest version.",
+            )
 
     def show_stats(self, _) -> None:
         try:
