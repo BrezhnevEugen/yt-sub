@@ -23,7 +23,19 @@ A small macOS menu-bar utility that pulls **metadata + transcript** for any YouT
 
 `transcript.py` tries `youtube-transcript-api` first (fast, pure HTTP). YouTube blocks that endpoint aggressively, so on any failure it falls back to `yt-dlp`, which uses the same player API the browser hits and is rarely blocked. Result: works on residential IPs without proxies.
 
-## Setup
+## Install
+
+### Option A: download the DMG (recommended)
+
+A signed and notarized DMG is published on GitHub Releases — no Python or developer tools required.
+
+1. Grab `YT-sub-x.y.z.dmg` from the [latest release](https://github.com/BrezhnevEugen/yt-sub/releases).
+2. Open the DMG and drag **YT-sub.app** into **Applications**.
+3. Launch it from Spotlight or `/Applications`. Look for the red ▶ icon in the menu bar.
+
+The bundle ships its own Python interpreter and all dependencies (~219 MB unpacked, ~89 MB compressed). Gatekeeper accepts it without prompts because it's notarized.
+
+### Option B: install from source
 
 Requires macOS 11+, Python 3.10+, and a Google Cloud OAuth client.
 
