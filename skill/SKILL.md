@@ -22,6 +22,8 @@ The `yt-sub` MCP server provides:
 - **`list_processed_videos()`** — list previously cached videos (newest first).
 - **`get_processed_video(video_id, include_segments=False)`** — re-read a cached video from disk without hitting YouTube again.
 - **`get_stats()`** — aggregate counters over the cache: number of videos, unique channels, total video duration, transcript word/char totals, last processed video. Use when the user asks "сколько роликов я обработал", "статистика", "how many videos", etc.
+- **`get_cookies_browser()`** — read which browser yt-dlp uses for cookies (or null if disabled).
+- **`set_cookies_browser(browser)`** — point yt-dlp at a browser's cookie jar (`"chrome" | "safari" | "firefox" | "brave" | "edge" | "chromium" | "arc"`), or pass null/empty to disable. Persists in `~/.config/yt-sub/config.json`.
 
 ## Workflow
 

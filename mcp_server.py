@@ -6,9 +6,11 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+import config
 from stats import compute_stats
 from storage import OUTPUT_DIR
 from transcript import TranscriptError, fetch_transcript, parse_video_id
+from version import __version__
 from youtube_client import AuthError, YouTubeClient
 
 mcp = FastMCP("yt-sub")
@@ -184,13 +186,69 @@ def get_processed_video(
 
 
 @mcp.tool()
+def set_cookies_browser(browser: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Configure which browser yt-dlp should read cookies from. Use this when
+    `process_video` returns a transcript_error mentioning IP block, "Sign
+    in to confirm you're not a bot", or similar — passing real browser
+    cookies makes YouTube treat requests as a logged-in session.
+
+    Args:
+        browser: One of "chrome", "safari", "firefox", "brave", "edge",
+                 "chromium", "arc". Pass null/empty to disable cookies and
+                 fall back to anonymous fetching.
+
+    The setting is persisted at ~/.config/yt-sub/config.json and is shared
+    between this MCP server and the YT-sub tray app.
+    """
+    norm = (browser or "").strip().lower() or None
+    if norm and norm not in config.SUPPORTED_BROWSERS:
+        return {
+            "error": "unsupported_browser",
+            "message": f"Use one of: {', '.join(config.SUPPORTED_BROWSERS)} or null to disable.",
+            "supported": list(config.SUPPORTED_BROWSERS),
+        }
+    config.set_ytdlp_browser(norm)
+    return {
+        "ok": True,
+        "ytdlp_browser": norm,
+        "message": (
+            f"yt-dlp will now read cookies from {norm}."
+            if norm else
+            "yt-dlp cookies disabled."
+        ),
+    }
+
+
+@mcp.tool()
+def get_cookies_browser() -> Dict[str, Any]:
+    """
+    Return which browser yt-dlp is currently configured to read cookies
+    from (or null if disabled), plus the list of supported browser names.
+    """
+    return {
+        "ytdlp_browser": config.get_ytdlp_browser(),
+        "supported": list(config.SUPPORTED_BROWSERS),
+    }
+
+
+@mcp.tool()
 def get_stats() -> Dict[str, Any]:
     """
     Aggregate statistics over all videos cached under ~/YT-sub/output/:
     counts, unique channels, total video duration, transcript word/char totals,
-    and the most recently processed video.
+    and the most recently processed video. Also includes the YT-sub server
+    version.
     """
-    return compute_stats()
+    s = compute_stats()
+    s["version"] = __version__
+    return s
+
+
+@mcp.tool()
+def get_version() -> Dict[str, str]:
+    """Return the YT-sub MCP server version string."""
+    return {"version": __version__}
 
 
 if __name__ == "__main__":

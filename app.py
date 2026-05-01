@@ -17,6 +17,11 @@ if "--mcp" in sys.argv:
     mcp.run()
     sys.exit(0)
 
+if "--version" in sys.argv or "-V" in sys.argv:
+    from version import __version__
+    print(f"YT-sub {__version__}")
+    sys.exit(0)
+
 import rumps
 
 try:
@@ -31,6 +36,8 @@ from youtube_client import YouTubeClient, AuthError
 from transcript import fetch_transcript, TranscriptError, parse_video_id
 from icon import ensure_icon
 from stats import compute_stats, format_stats
+import config as yt_config
+from version import __version__
 
 
 LAUNCH_AGENT_LABEL = "com.brezhnev.yt-sub"
@@ -87,8 +94,17 @@ class YTSubApp(rumps.App):
         self._last_output: Optional[Path] = None
         self._busy = False
 
-        self._header = rumps.MenuItem("YT-sub — YouTube metadata + transcripts")
+        self._header = rumps.MenuItem(
+            f"YT-sub v{__version__} — YouTube metadata + transcripts"
+        )
         self._status = rumps.MenuItem("…")
+
+        self._cookies_menu = rumps.MenuItem("yt-dlp cookies from…")
+        self._cookies_items = {}
+        for label in ("(disabled)",) + yt_config.SUPPORTED_BROWSERS:
+            mi = rumps.MenuItem(label, callback=self.set_cookies_browser)
+            self._cookies_items[label] = mi
+            self._cookies_menu.add(mi)
 
         self.menu = [
             self._header,
@@ -99,6 +115,7 @@ class YTSubApp(rumps.App):
             rumps.MenuItem("Load client_secret.json…", callback=self.load_client_secret),
             rumps.MenuItem("Sign in with Google", callback=self.sign_in),
             rumps.MenuItem("Sign out", callback=self.sign_out),
+            self._cookies_menu,
             None,
             rumps.MenuItem("Open last result", callback=self.open_last),
             rumps.MenuItem("Open output folder", callback=self.open_output),
@@ -147,6 +164,13 @@ class YTSubApp(rumps.App):
         try:
             on = LAUNCH_AGENT_PATH.exists()
             self.menu["Auto-start on login"].state = 1 if on else 0
+        except Exception:
+            pass
+        try:
+            current = yt_config.get_ytdlp_browser()
+            for label, mi in self._cookies_items.items():
+                is_active = (label == "(disabled)" and current is None) or label == current
+                mi.state = 1 if is_active else 0
         except Exception:
             pass
         try:
@@ -454,10 +478,21 @@ class YTSubApp(rumps.App):
         self.title = BUSY_SUFFIX if busy else None
         self._refresh_menu()
 
+    def set_cookies_browser(self, sender) -> None:
+        label = sender.title
+        browser = None if label == "(disabled)" else label
+        yt_config.set_ytdlp_browser(browser)
+        self._refresh_menu()
+        msg = f"yt-dlp will use cookies from {browser}" if browser else "yt-dlp cookies disabled"
+        rumps.notification("YT-sub", "Cookie source updated", msg)
+
     def show_stats(self, _) -> None:
         try:
             stats = compute_stats()
-            rumps.alert(title="YT-sub statistics", message=format_stats(stats))
+            rumps.alert(
+                title=f"YT-sub v{__version__}",
+                message=format_stats(stats),
+            )
         except Exception as e:
             rumps.alert(title="Stats failed", message=str(e))
 

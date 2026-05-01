@@ -107,6 +107,8 @@ def _parse_json3(text: str) -> List[Dict]:
 def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
     import yt_dlp
 
+    from config import get_ytdlp_browser
+
     url = f"https://www.youtube.com/watch?v={video_id}"
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -121,6 +123,13 @@ def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
             "no_warnings": True,
             "noprogress": True,
         }
+        browser = get_ytdlp_browser()
+        if browser:
+            # Lets yt-dlp read cookies straight from the user's browser
+            # so YouTube treats requests as coming from a logged-in
+            # session — bypasses the "Sign in to confirm you're not a
+            # bot" / IP-block barriers that hit residential IPs.
+            opts["cookiesfrombrowser"] = (browser,)
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.extract_info(url, download=True)

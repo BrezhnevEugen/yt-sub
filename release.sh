@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="${YT_SUB_VERSION:-0.1.1}"
+VERSION="${YT_SUB_VERSION:-$(grep -E '^__version__' version.py | sed -E 's/.*"([^"]+)".*/\1/')}"
 NOTARY_PROFILE="${YT_SUB_NOTARY_PROFILE:-brainai-notary}"
 APP_DIR="dist/YT-sub.app"
 DMG_PATH="dist/YT-sub-${VERSION}.dmg"

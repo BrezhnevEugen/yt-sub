@@ -4,6 +4,9 @@
 """
 from setuptools import setup
 
+# Single source of truth for the version string.
+exec(open('version.py').read())  # defines __version__
+
 APP = ['app.py']
 
 DATA_FILES = [
@@ -17,15 +20,14 @@ OPTIONS = {
         'CFBundleName': 'YT-sub',
         'CFBundleDisplayName': 'YT-sub',
         'CFBundleIdentifier': 'com.brezhnev.yt-sub',
-        'CFBundleVersion': '0.1.1',
-        'CFBundleShortVersionString': '0.1.1',
+        'CFBundleVersion': __version__,
+        'CFBundleShortVersionString': __version__,
         'LSUIElement': True,
         'LSMinimumSystemVersion': '11.0',
         'NSHighResolutionCapable': True,
         'NSHumanReadableCopyright': 'MIT licensed',
     },
     'iconfile': 'assets/yt_icon.icns',
-    # py2app needs help finding lazy-imported subpackages
     # py2app traces the import graph from app.py + listed includes, but
     # several deps use import_module() / lazy imports it can't see.
     # Include them as full packages so every submodule is bundled.
@@ -43,7 +45,7 @@ OPTIONS = {
     # we explicitly include it to pull its imports into the graph too.
     'includes': [
         'icon', 'storage', 'stats', 'transcript', 'youtube_client',
-        'mcp_server',
+        'mcp_server', 'config', 'version',
     ],
 }
 
