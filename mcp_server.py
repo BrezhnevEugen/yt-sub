@@ -12,7 +12,12 @@ from transcript import TranscriptError, fetch_transcript, parse_video_id
 from youtube_client import AuthError, YouTubeClient
 
 mcp = FastMCP("yt-sub")
-_client = YouTubeClient()
+
+
+def _client() -> YouTubeClient:
+    """Always read the latest token from disk. The MCP subprocess can be
+    long-lived; the user may sign in/out via the tray app at any time."""
+    return YouTubeClient()
 
 
 def _summarize(metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -58,14 +63,15 @@ def process_video(
     except ValueError as e:
         return {"error": "invalid_url", "message": str(e)}
 
-    if not _client.is_authenticated():
+    client = _client()
+    if not client.is_authenticated():
         return {
             "error": "not_signed_in",
             "message": "Open the YT-sub tray app and use Sign in with Google.",
         }
 
     try:
-        metadata = _client.fetch_metadata(video_id)
+        metadata = client.fetch_metadata(video_id)
     except AuthError as e:
         return {"error": "auth", "message": str(e)}
     except Exception as e:

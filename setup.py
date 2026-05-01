@@ -17,8 +17,8 @@ OPTIONS = {
         'CFBundleName': 'YT-sub',
         'CFBundleDisplayName': 'YT-sub',
         'CFBundleIdentifier': 'com.brezhnev.yt-sub',
-        'CFBundleVersion': '0.1.0',
-        'CFBundleShortVersionString': '0.1.0',
+        'CFBundleVersion': '0.1.1',
+        'CFBundleShortVersionString': '0.1.1',
         'LSUIElement': True,
         'LSMinimumSystemVersion': '11.0',
         'NSHighResolutionCapable': True,
@@ -26,7 +26,19 @@ OPTIONS = {
     },
     'iconfile': 'assets/yt_icon.icns',
     # py2app needs help finding lazy-imported subpackages
-    # Let py2app trace the import graph from app.py + listed includes.
+    # py2app traces the import graph from app.py + listed includes, but
+    # several deps use import_module() / lazy imports it can't see.
+    # Include them as full packages so every submodule is bundled.
+    'packages': [
+        'anyio',
+        'mcp',
+        'charset_normalizer',
+        'idna',
+        'pydantic',
+        'pydantic_core',
+        'httpx',
+        'httpcore',
+    ],
     # `mcp_server` is a separate entry point (not imported by app.py), so
     # we explicitly include it to pull its imports into the graph too.
     'includes': [

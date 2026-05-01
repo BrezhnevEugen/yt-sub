@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Optional
+
+# Headless MCP mode — single binary, two entry points. Enter this branch
+# *before* importing rumps / AppKit so the MCP host doesn't start a GUI
+# event loop in the agent subprocess.
+if "--mcp" in sys.argv:
+    from mcp_server import mcp
+    mcp.run()
+    sys.exit(0)
 
 import rumps
 
@@ -21,6 +31,40 @@ from youtube_client import YouTubeClient, AuthError
 from transcript import fetch_transcript, TranscriptError, parse_video_id
 from icon import ensure_icon
 from stats import compute_stats, format_stats
+
+
+LAUNCH_AGENT_LABEL = "com.brezhnev.yt-sub"
+LAUNCH_AGENT_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
+
+
+def _is_frozen() -> bool:
+    return getattr(sys, "frozen", False) is not False
+
+
+def _bundle_launcher() -> Optional[Path]:
+    """Path to <YT-sub.app>/Contents/MacOS/YT-sub when running inside a
+    py2app bundle, else None. Uses NSBundle so it stays correct even if
+    sys.executable points at the embedded Python framework."""
+    if not _is_frozen():
+        return None
+    try:
+        from AppKit import NSBundle
+        bp = NSBundle.mainBundle().bundlePath()
+        if bp:
+            return Path(bp) / "Contents" / "MacOS" / "YT-sub"
+    except Exception:
+        pass
+    return Path(sys.executable).resolve().parent.parent / "MacOS" / "YT-sub"
+
+
+def _agent_command() -> tuple[str, list[str]]:
+    """Return (command, args) for the MCP host config and LaunchAgent —
+    different paths for source install vs DMG-bundled install."""
+    if _is_frozen():
+        launcher = _bundle_launcher()
+        return str(launcher), ["--mcp"]
+    project = Path(__file__).resolve().parent
+    return str(project / ".venv" / "bin" / "python"), [str(project / "mcp_server.py")]
 
 
 BUSY_SUFFIX = "…"
@@ -60,6 +104,7 @@ class YTSubApp(rumps.App):
             rumps.MenuItem("Open output folder", callback=self.open_output),
             rumps.MenuItem("Statistics", callback=self.show_stats),
             None,
+            rumps.MenuItem("Auto-start on login", callback=self.toggle_login_item),
             rumps.MenuItem("Copy MCP config", callback=self.copy_mcp_config),
             rumps.MenuItem("Install skill (~/.claude)", callback=self.install_skill_global),
             rumps.MenuItem("Install skill in project…", callback=self.install_skill_in_project),
@@ -99,6 +144,11 @@ class YTSubApp(rumps.App):
         self.menu["Open last result"].set_callback(
             self.open_last if self._last_output else None
         )
+        try:
+            on = LAUNCH_AGENT_PATH.exists()
+            self.menu["Auto-start on login"].state = 1 if on else 0
+        except Exception:
+            pass
         try:
             self._status.title = self._status_text()
         except Exception:
@@ -186,14 +236,12 @@ class YTSubApp(rumps.App):
         subprocess.run(["open", str(OUTPUT_DIR)])
 
     def copy_mcp_config(self, _) -> None:
-        project_dir = Path(__file__).resolve().parent
-        python_bin = project_dir / ".venv" / "bin" / "python"
-        server_path = project_dir / "mcp_server.py"
+        command, args = _agent_command()
         config = {
             "mcpServers": {
                 "yt-sub": {
-                    "command": str(python_bin),
-                    "args": [str(server_path)],
+                    "command": command,
+                    "args": args,
                 }
             }
         }
@@ -204,6 +252,75 @@ class YTSubApp(rumps.App):
             "MCP config copied",
             "Paste into Claude Desktop / Claude Code MCP config",
         )
+
+    def toggle_login_item(self, _) -> None:
+        if LAUNCH_AGENT_PATH.exists():
+            self._disable_login_item()
+        else:
+            self._enable_login_item()
+        self._refresh_menu()
+
+    def _enable_login_item(self) -> None:
+        if _is_frozen():
+            launcher = _bundle_launcher()
+            program_args = [str(launcher)]
+            working_dir = str(launcher.parent)
+        else:
+            project = Path(__file__).resolve().parent
+            program_args = [
+                str(project / ".venv" / "bin" / "python"),
+                str(project / "app.py"),
+            ]
+            working_dir = str(project)
+
+        log_file = str(Path.home() / "Library" / "Logs" / "yt-sub.log")
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        LAUNCH_AGENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+        args_xml = "\n    ".join(f"<string>{a}</string>" for a in program_args)
+        plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{LAUNCH_AGENT_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    {args_xml}
+  </array>
+  <key>WorkingDirectory</key><string>{working_dir}</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>Crashed</key><true/>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>StandardOutPath</key><string>{log_file}</string>
+  <key>StandardErrorPath</key><string>{log_file}</string>
+  <key>ProcessType</key><string>Interactive</string>
+</dict>
+</plist>
+"""
+        LAUNCH_AGENT_PATH.write_text(plist, encoding="utf-8")
+        uid = os.getuid()
+        subprocess.run(
+            ["launchctl", "bootout", f"gui/{uid}/{LAUNCH_AGENT_LABEL}"],
+            capture_output=True,
+        )
+        subprocess.run(
+            ["launchctl", "bootstrap", f"gui/{uid}", str(LAUNCH_AGENT_PATH)],
+            capture_output=True,
+        )
+        rumps.notification("YT-sub", "Auto-start on login: ON", "Will run on every login")
+
+    def _disable_login_item(self) -> None:
+        uid = os.getuid()
+        subprocess.run(
+            ["launchctl", "bootout", f"gui/{uid}/{LAUNCH_AGENT_LABEL}"],
+            capture_output=True,
+        )
+        if LAUNCH_AGENT_PATH.exists():
+            LAUNCH_AGENT_PATH.unlink()
+        rumps.notification("YT-sub", "Auto-start on login: OFF", "")
 
     def _skill_full(self) -> str:
         src = Path(__file__).resolve().parent / "skill" / "SKILL.md"

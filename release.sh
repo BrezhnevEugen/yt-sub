@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="${YT_SUB_VERSION:-0.1.0}"
+VERSION="${YT_SUB_VERSION:-0.1.1}"
 NOTARY_PROFILE="${YT_SUB_NOTARY_PROFILE:-brainai-notary}"
 APP_DIR="dist/YT-sub.app"
 DMG_PATH="dist/YT-sub-${VERSION}.dmg"
@@ -82,11 +82,15 @@ if [ -f "$PYZIP" ]; then
     fi
 fi
 
-step "Code-signing the bundle (sign all .so/.dylib leaves first)"
-# codesign --deep doesn't recurse into Resources/lib-dynload. Apple's
-# notarization requires every Mach-O binary to be individually signed
-# with --timestamp and the hardened runtime, so sign all leaves first.
-LEAVES=$(find "$APP_DIR" -type f \( -name "*.so" -o -name "*.dylib" \) | sort)
+step "Code-signing the bundle (sign every Mach-O leaf first)"
+# codesign --deep does not actually recurse into all Mach-O binaries.
+# Apple's notarization needs every binary individually signed with a
+# secure timestamp and hardened runtime — including .so/.dylib leaves
+# AND extensionless executables (the embedded python, framework
+# binaries, etc). Enumerate via `file` so nothing is missed.
+LEAVES=$(find "$APP_DIR" -type f -not -path "*/Contents/MacOS/YT-sub" -exec file -h {} + 2>/dev/null \
+    | awk -F: '/Mach-O/ {print $1}' \
+    | sort -u)
 LEAF_COUNT=$(echo "$LEAVES" | grep -c .)
 echo "signing $LEAF_COUNT Mach-O leaves…"
 echo "$LEAVES" | while IFS= read -r f; do

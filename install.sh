@@ -65,9 +65,14 @@ if [ "$DO_UNINSTALL" -eq 1 ]; then
     step "Stopping LaunchAgent"
     launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
     rm -f "$LAUNCH_AGENT"
-    step "Removing /Applications/YT-sub.app"
-    rm -rf "$APPS_INSTALLED"
+    step "Removing /Applications/YT-sub.app (symlink or DMG copy)"
+    # Handle both: symlink from source-install AND copied bundle from DMG.
+    if [ -L "$APPS_INSTALLED" ] || [ -e "$APPS_INSTALLED" ]; then
+        rm -rf "$APPS_INSTALLED"
+        echo "removed: $APPS_INSTALLED"
+    fi
     pkill -f "$PROJECT_DIR/.venv/bin/python.*app\.py" 2>/dev/null || true
+    pkill -f "/Applications/YT-sub\.app/Contents/MacOS/YT-sub" 2>/dev/null || true
     echo "Uninstalled. Project dir and ~/.config/yt-sub are untouched."
     exit 0
 fi
