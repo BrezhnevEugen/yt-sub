@@ -147,7 +147,7 @@ class YTSubApp(rumps.App):
             "YT-sub",
             title=None,
             icon=icon_path,
-            template=False,
+            template=True,
             quit_button=None,
         )
         self.client = YouTubeClient()

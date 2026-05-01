@@ -61,16 +61,73 @@ def _render_png(out_path: Path, size: int) -> None:
     png_data.writeToFile_atomically_(str(out_path), True)
 
 
+def _render_menu_template_png(out_path: Path, size: int) -> None:
+    """Monochrome silhouette of the menu-bar icon — solid black on
+    transparent alpha at exactly `size` x `size` pixels. macOS treats
+    template images as silhouettes and auto-tints them for dark/light
+    menu bar themes."""
+    from AppKit import (
+        NSBezierPath,
+        NSBitmapImageRep,
+        NSCalibratedRGBColorSpace,
+        NSColor,
+        NSGraphicsContext,
+        NSMakeRect,
+        NSPNGFileType,
+    )
+    from Foundation import NSPoint
+
+    # Allocate an exact-pixel bitmap directly (NSImage.lockFocus would
+    # double the backing store on Retina displays).
+    rep = (
+        NSBitmapImageRep.alloc()
+        .initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel_(
+            None, size, size, 8, 4, True, False,
+            NSCalibratedRGBColorSpace, 0, 32,
+        )
+    )
+    NSGraphicsContext.saveGraphicsState()
+    ctx = NSGraphicsContext.graphicsContextWithBitmapImageRep_(rep)
+    NSGraphicsContext.setCurrentContext_(ctx)
+
+    # Geometry from yt_icon_menu.svg (44×44 viewBox), scaled to size.
+    # System-style filled silhouette: solid rounded rect with a
+    # triangle-shaped hole, drawn as a single path with even-odd
+    # winding so the inner subpath subtracts from the outer.
+    f = size / 44.0
+    from AppKit import NSWindingRuleEvenOdd
+
+    silhouette = NSBezierPath.bezierPath()
+    silhouette.appendBezierPathWithRoundedRect_xRadius_yRadius_(
+        NSMakeRect(6 * f, 6 * f, 32 * f, 32 * f), 9 * f, 9 * f
+    )
+    # Play triangle pointing right (Cocoa is y-up, mirror from SVG).
+    silhouette.moveToPoint_(NSPoint(18 * f, 30 * f))
+    silhouette.lineToPoint_(NSPoint(32 * f, 22 * f))
+    silhouette.lineToPoint_(NSPoint(18 * f, 14 * f))
+    silhouette.closePath()
+    silhouette.setWindingRule_(NSWindingRuleEvenOdd)
+
+    NSColor.blackColor().set()
+    silhouette.fill()
+
+    NSGraphicsContext.restoreGraphicsState()
+
+    png_data = rep.representationUsingType_properties_(NSPNGFileType, None)
+    png_data.writeToFile_atomically_(str(out_path), True)
+
+
 def ensure_icon() -> Path:
-    """Return path to the menu-bar icon PNG. If it already exists (e.g.
-    bundled into the .app via DATA_FILES, or rendered during a previous
-    run in source mode) just return it. Otherwise render fresh."""
-    icon_path = _assets_dir() / "yt_icon.png"
-    if icon_path.exists():
-        return icon_path
-    icon_path.parent.mkdir(parents=True, exist_ok=True)
-    _render_png(icon_path, 36)
-    return icon_path
+    """Render the menu-bar icon as a template (monochrome) PNG. macOS
+    auto-tints templates to match the menu bar background (dark/light).
+    Always re-renders so the file is in sync with the geometry defined
+    in code (cheap — Cocoa drawing at 22/44px is sub-millisecond)."""
+    p1 = _assets_dir() / "yt_icon.png"
+    p2 = _assets_dir() / "yt_icon@2x.png"
+    p1.parent.mkdir(parents=True, exist_ok=True)
+    _render_menu_template_png(p1, 22)
+    _render_menu_template_png(p2, 44)
+    return p1
 
 
 def ensure_icns() -> Path:
