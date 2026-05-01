@@ -123,13 +123,22 @@ def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
             "no_warnings": True,
             "noprogress": True,
         }
-        browser = get_ytdlp_browser()
-        if browser:
-            # Lets yt-dlp read cookies straight from the user's browser
-            # so YouTube treats requests as coming from a logged-in
-            # session — bypasses the "Sign in to confirm you're not a
-            # bot" / IP-block barriers that hit residential IPs.
-            opts["cookiesfrombrowser"] = (browser,)
+        # cookies.txt path wins over browser-cookies if both are set —
+        # browsers on macOS often hit TCC sandboxing (Safari) or App-Bound
+        # Encryption (Chrome 130+), while a manually exported cookies.txt
+        # always works.
+        from config import get_cookies_file
+        cookies_file = get_cookies_file()
+        if cookies_file:
+            opts["cookiefile"] = cookies_file
+        else:
+            browser = get_ytdlp_browser()
+            if browser:
+                # yt-dlp reads cookies straight from the user's browser
+                # so YouTube treats requests as coming from a logged-in
+                # session — bypasses "Sign in to confirm you're not a
+                # bot" / IP-block barriers that hit residential IPs.
+                opts["cookiesfrombrowser"] = (browser,)
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.extract_info(url, download=True)

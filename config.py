@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from storage import CONFIG_DIR
 
 CONFIG_PATH = CONFIG_DIR / "config.json"
+MANAGED_COOKIES_FILE = CONFIG_DIR / "cookies.txt"
 
 SUPPORTED_BROWSERS = ("chrome", "safari", "firefox", "brave", "edge", "chromium", "arc")
 
@@ -38,4 +40,22 @@ def set_ytdlp_browser(browser: str | None) -> None:
         cfg["ytdlp_browser"] = browser.lower()
     else:
         cfg.pop("ytdlp_browser", None)
+    save(cfg)
+
+
+def get_cookies_file() -> Optional[str]:
+    """Path to a Netscape-format cookies.txt that yt-dlp should use, or
+    None if not configured / file missing on disk."""
+    p = load().get("ytdlp_cookies_file")
+    if p and Path(p).exists():
+        return str(p)
+    return None
+
+
+def set_cookies_file(path: Optional[str]) -> None:
+    cfg = load()
+    if path:
+        cfg["ytdlp_cookies_file"] = str(Path(path).expanduser().resolve())
+    else:
+        cfg.pop("ytdlp_cookies_file", None)
     save(cfg)

@@ -24,6 +24,7 @@ The `yt-sub` MCP server provides:
 - **`get_stats()`** — aggregate counters over the cache: number of videos, unique channels, total video duration, transcript word/char totals, last processed video. Use when the user asks "сколько роликов я обработал", "статистика", "how many videos", etc.
 - **`get_cookies_browser()`** — read which browser yt-dlp uses for cookies (or null if disabled).
 - **`set_cookies_browser(browser)`** — point yt-dlp at a browser's cookie jar (`"chrome" | "safari" | "firefox" | "brave" | "edge" | "chromium" | "arc"`), or pass null/empty to disable. Persists in `~/.config/yt-sub/config.json`.
+- **`set_cookies_file(path)`** / **`get_cookies_file()`** — point yt-dlp at a Netscape-format `cookies.txt` (the file is copied into `~/.config/yt-sub/cookies.txt` so the original can move). Use this when browser-cookies fail: Safari is TCC-sandboxed on macOS, Chrome 130+ uses App-Bound Encryption that yt-dlp cannot decrypt, Firefox may not be installed. Pass null/empty to clear. **A configured cookies file overrides the browser cookies setting.**
 
 ## Workflow
 

@@ -99,8 +99,19 @@ class YTSubApp(rumps.App):
         )
         self._status = rumps.MenuItem("…")
 
-        self._cookies_menu = rumps.MenuItem("yt-dlp cookies from…")
+        self._cookies_menu = rumps.MenuItem("Cookies for yt-dlp")
         self._cookies_items = {}
+        load_item = rumps.MenuItem(
+            "Load cookies.txt…", callback=self.load_cookies_file
+        )
+        clear_item = rumps.MenuItem(
+            "Clear cookies.txt", callback=self.clear_cookies_file
+        )
+        self._cookies_items["__load"] = load_item
+        self._cookies_items["__clear"] = clear_item
+        self._cookies_menu.add(load_item)
+        self._cookies_menu.add(clear_item)
+        self._cookies_menu.add(rumps.separator)
         for label in ("(disabled)",) + yt_config.SUPPORTED_BROWSERS:
             mi = rumps.MenuItem(label, callback=self.set_cookies_browser)
             self._cookies_items[label] = mi
@@ -167,9 +178,20 @@ class YTSubApp(rumps.App):
         except Exception:
             pass
         try:
+            cookies_file_active = yt_config.get_cookies_file() is not None
+            self._cookies_items["__load"].state = 1 if cookies_file_active else 0
+            self._cookies_items["__clear"].set_callback(
+                self.clear_cookies_file if cookies_file_active else None
+            )
             current = yt_config.get_ytdlp_browser()
             for label, mi in self._cookies_items.items():
-                is_active = (label == "(disabled)" and current is None) or label == current
+                if label.startswith("__"):
+                    continue
+                is_active = (
+                    not cookies_file_active and (
+                        (label == "(disabled)" and current is None) or label == current
+                    )
+                )
                 mi.state = 1 if is_active else 0
         except Exception:
             pass
@@ -485,6 +507,72 @@ class YTSubApp(rumps.App):
         self._refresh_menu()
         msg = f"yt-dlp will use cookies from {browser}" if browser else "yt-dlp cookies disabled"
         rumps.notification("YT-sub", "Cookie source updated", msg)
+
+    def load_cookies_file(self, _) -> None:
+        script = (
+            'try\n'
+            '  set f to choose file with prompt '
+            '"Select cookies.txt (Netscape format, exported from your browser)" '
+            'of type {"txt", "public.plain-text"}\n'
+            '  return POSIX path of f\n'
+            'on error number -128\n'
+            '  return ""\n'
+            'end try'
+        )
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True
+        )
+        path_str = result.stdout.strip()
+        if not path_str:
+            return
+
+        src = Path(path_str)
+        if not src.exists() or not src.is_file():
+            rumps.alert(title="File not found", message=str(src))
+            return
+
+        try:
+            head = src.read_text(encoding="utf-8", errors="ignore")[:2000]
+        except Exception as e:
+            rumps.alert(title="Cannot read file", message=str(e))
+            return
+
+        looks_like_cookies = (
+            "# Netscape HTTP Cookie File" in head
+            or ".youtube.com\t" in head
+            or "youtube.com" in head.lower()
+        )
+        if not looks_like_cookies:
+            rumps.alert(
+                title="Doesn't look like a cookies.txt",
+                message=(
+                    "The file does not contain Netscape header or any "
+                    "youtube.com lines. Will save anyway, but yt-dlp may "
+                    "fail.\n\nExport tip: install \"Get cookies.txt LOCALLY\" "
+                    "browser extension, open youtube.com, click the extension "
+                    "→ Export."
+                ),
+            )
+
+        yt_config.MANAGED_COOKIES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, yt_config.MANAGED_COOKIES_FILE)
+        yt_config.set_cookies_file(str(yt_config.MANAGED_COOKIES_FILE))
+        self._refresh_menu()
+        rumps.notification(
+            "YT-sub",
+            "cookies.txt loaded",
+            "yt-dlp will now use this file (overrides browser cookies)",
+        )
+
+    def clear_cookies_file(self, _) -> None:
+        yt_config.set_cookies_file(None)
+        try:
+            if yt_config.MANAGED_COOKIES_FILE.exists():
+                yt_config.MANAGED_COOKIES_FILE.unlink()
+        except Exception:
+            pass
+        self._refresh_menu()
+        rumps.notification("YT-sub", "cookies.txt cleared", "")
 
     def show_stats(self, _) -> None:
         try:

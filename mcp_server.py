@@ -233,6 +233,55 @@ def get_cookies_browser() -> Dict[str, Any]:
 
 
 @mcp.tool()
+def set_cookies_file(path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Point yt-dlp at a Netscape-format cookies.txt file (export from a
+    browser via "Get cookies.txt LOCALLY" extension or similar). The
+    file is copied into ~/.config/yt-sub/cookies.txt and survives the
+    original being deleted. A configured file overrides the browser
+    cookies setting. Pass null/empty to clear.
+
+    Use this when browser cookies are unavailable: macOS TCC sandbox
+    blocks Safari, Chrome 130+ uses App-Bound Encryption that yt-dlp
+    can't decrypt, and Firefox may not be installed.
+
+    Args:
+        path: Absolute path to a cookies.txt on disk, or null to clear.
+    """
+    import shutil
+
+    if not path:
+        config.set_cookies_file(None)
+        if config.MANAGED_COOKIES_FILE.exists():
+            try:
+                config.MANAGED_COOKIES_FILE.unlink()
+            except Exception:
+                pass
+        return {"ok": True, "cookies_file": None}
+
+    src = Path(path).expanduser()
+    if not src.exists() or not src.is_file():
+        return {
+            "error": "not_found",
+            "message": f"{src} does not exist or is not a file",
+        }
+    config.MANAGED_COOKIES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, config.MANAGED_COOKIES_FILE)
+    config.set_cookies_file(str(config.MANAGED_COOKIES_FILE))
+    return {
+        "ok": True,
+        "cookies_file": str(config.MANAGED_COOKIES_FILE),
+        "message": "yt-dlp will now use this file (overrides browser cookies)",
+    }
+
+
+@mcp.tool()
+def get_cookies_file() -> Dict[str, Any]:
+    """Return the active cookies.txt path yt-dlp is using, or null."""
+    return {"cookies_file": config.get_cookies_file()}
+
+
+@mcp.tool()
 def get_stats() -> Dict[str, Any]:
     """
     Aggregate statistics over all videos cached under ~/YT-sub/output/:
