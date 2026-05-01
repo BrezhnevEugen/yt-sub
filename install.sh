@@ -257,17 +257,22 @@ echo "ok"
 if [ "$SKIP_LAUNCH" -eq 0 ]; then
     step "Starting"
     launchctl kickstart "gui/$UID/$LABEL"
-    for i in 1 2 3 4 5; do
+    OK=0
+    for i in 1 2 3 4 5 6 7 8 9 10; do
         sleep 1
         if pgrep -f "$PROJECT_DIR/.venv/bin/python.*app\.py" >/dev/null; then
-            echo "ok (took ${i}s) — look for the red ▶ icon in the menu bar"
-            break
+            OK=1; break
         fi
-        if [ "$i" -eq 5 ]; then
-            echo "WARN: process not running after 5s. Tail of log:"
-            tail -20 "$LOG_FILE" 2>/dev/null || true
+        if launchctl print "gui/$UID/$LABEL" 2>/dev/null | grep -q "state = running"; then
+            OK=1; break
         fi
     done
+    if [ "$OK" -eq 1 ]; then
+        echo "ok (${i}s) — look for the red ▶ icon in the menu bar"
+    else
+        echo "WARN: process not running after 10s. Tail of log:"
+        tail -20 "$LOG_FILE" 2>/dev/null || true
+    fi
 fi
 
 cat <<EOF
