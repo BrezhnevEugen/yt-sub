@@ -20,7 +20,7 @@ class TranscriptError(Exception):
 
 
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-_PREFERRED_LANGS: Tuple[str, ...] = ("ru", "en")
+_PREFERRED_LANGS: Tuple[str, ...] = ("ru-orig", "ru", "en-orig", "en")
 
 
 def parse_video_id(url_or_id: str) -> str:
@@ -107,51 +107,112 @@ def _parse_json3(text: str) -> List[Dict]:
 def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
     import yt_dlp
 
-    from config import get_ytdlp_browser
+    from config import get_cookies_file, get_ytdlp_browser
 
     url = f"https://www.youtube.com/watch?v={video_id}"
+    cookies_file = get_cookies_file()
+    browser = get_ytdlp_browser()
+
+    # Step 1: discover what subtitle languages this video actually has,
+    # so we ask yt-dlp to download exactly one language. Otherwise it
+    # tries each lang in subtitleslangs and a single 429 from the
+    # timedtext endpoint on a missing language can poison the request.
+    discover_opts = {
+        "skip_download": True,
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "ignore_no_formats_error": True,
+        "allow_unplayable_formats": True,
+    }
+    if cookies_file:
+        discover_opts["cookiefile"] = cookies_file
+    elif browser:
+        discover_opts["cookiesfrombrowser"] = (browser,)
+
+    try:
+        with yt_dlp.YoutubeDL(discover_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as e:
+        return None, f"yt-dlp discover: {e}"
+
+    manual_langs = set((info.get("subtitles") or {}).keys())
+    auto_langs = set((info.get("automatic_captions") or {}).keys())
+    chosen_lang: Optional[str] = None
+    for lang in _PREFERRED_LANGS:
+        if lang in manual_langs or lang in auto_langs:
+            chosen_lang = lang
+            break
+    if not chosen_lang:
+        # Take any available language as last resort.
+        any_lang = next(iter(manual_langs), None) or next(iter(auto_langs), None)
+        if not any_lang:
+            return None, "yt-dlp: no subtitles available for this video"
+        chosen_lang = any_lang
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         opts = {
             "skip_download": True,
             "writesubtitles": True,
             "writeautomaticsub": True,
-            "subtitleslangs": list(_PREFERRED_LANGS),
+            "subtitleslangs": [chosen_lang],
             "subtitlesformat": "json3",
             "outtmpl": str(tmp / "%(id)s"),
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,
+            # We only want subtitles. Without this flag yt-dlp still
+            # runs video-format selection and aborts with "Requested
+            # format is not available" on some videos (region/age
+            # restrictions, cookies for a different locale, etc).
+            "ignore_no_formats_error": True,
+            "allow_unplayable_formats": True,
+            # YouTube serves subtitles from a separate timedtext endpoint
+            # that rate-limits aggressively. Retry with exponential
+            # backoff on HTTP 429.
+            "retries": 10,
+            "fragment_retries": 10,
+            "retry_sleep_functions": {
+                "http": lambda n: min(2 ** n, 30),
+                "fragment": lambda n: min(2 ** n, 30),
+            },
+            # Browser-y User-Agent so the timedtext request looks like
+            # YouTube's own player rather than a CLI tool.
+            "http_headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                    "Version/17.0 Safari/605.1.15"
+                ),
+            },
         }
-        # cookies.txt path wins over browser-cookies if both are set —
-        # browsers on macOS often hit TCC sandboxing (Safari) or App-Bound
-        # Encryption (Chrome 130+), while a manually exported cookies.txt
-        # always works.
-        from config import get_cookies_file
-        cookies_file = get_cookies_file()
+        # cookies.txt path wins over browser-cookies — browsers on macOS
+        # often hit TCC sandboxing (Safari) or App-Bound Encryption
+        # (Chrome 130+), while a manually exported cookies.txt always
+        # works.
         if cookies_file:
             opts["cookiefile"] = cookies_file
-        else:
-            browser = get_ytdlp_browser()
-            if browser:
-                # yt-dlp reads cookies straight from the user's browser
-                # so YouTube treats requests as coming from a logged-in
-                # session — bypasses "Sign in to confirm you're not a
-                # bot" / IP-block barriers that hit residential IPs.
-                opts["cookiesfrombrowser"] = (browser,)
+        elif browser:
+            opts["cookiesfrombrowser"] = (browser,)
+
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.extract_info(url, download=True)
         except Exception as e:
             return None, f"yt-dlp: {e}"
 
-        for lang in _PREFERRED_LANGS:
-            for pattern in (f"*.{lang}.json3", f"*.{lang}-*.json3"):
-                for f in sorted(tmp.glob(pattern)):
-                    try:
-                        return _parse_json3(f.read_text(encoding="utf-8")), None
-                    except Exception as e:
-                        return None, f"yt-dlp parse {f.name}: {e}"
+        # Look for the chosen language first, then any fallback.
+        candidates = (
+            f"*.{chosen_lang}.json3",
+            f"*.{chosen_lang}-*.json3",
+        )
+        for pattern in candidates:
+            for f in sorted(tmp.glob(pattern)):
+                try:
+                    return _parse_json3(f.read_text(encoding="utf-8")), None
+                except Exception as e:
+                    return None, f"yt-dlp parse {f.name}: {e}"
         for f in sorted(tmp.glob("*.json3")):
             try:
                 return _parse_json3(f.read_text(encoding="utf-8")), None
