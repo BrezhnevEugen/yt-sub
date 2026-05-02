@@ -226,6 +226,7 @@ The same is exposed to agents via the `get_stats` MCP tool.
 - [ ] WebShare proxy support in `transcript.py` (option to keep `youtube-transcript-api` working when `yt-dlp` becomes the slow path).
 - [ ] Optional Whisper-based fallback for videos with no captions at all.
 - [ ] cross-platform packaging (the tray code is macOS-only via `rumps`/PyObjC).
+- [ ] **Control Center widget on macOS Tahoe** (Swift `ControlWidget` app extension). The Tahoe `WidgetKit` Control API is Swift-only and lives as an `.appex` plugin with App Group / URL-scheme IPC to the Python tray. ~4–6 h of work; deferred until benefit > friction.
 
 ## License
 
