@@ -239,6 +239,12 @@ class YTSubApp(rumps.App):
         ]
         self._refresh_menu()
 
+        # Fire a silent update check 5s after startup. Throttled to
+        # once per 6 hours via last_update_check_at in config.
+        _t = threading.Timer(5.0, self._autocheck_updates_background)
+        _t.daemon = True
+        _t.start()
+
     def _status_text(self) -> str:
         if self._busy:
             auth = "Processing…"
@@ -673,28 +679,38 @@ class YTSubApp(rumps.App):
     def open_repository(self, _) -> None:
         subprocess.run(["open", "https://github.com/BrezhnevEugen/yt-sub"])
 
-    def check_for_updates(self, _) -> None:
+    @staticmethod
+    def _fetch_latest_release() -> dict:
+        """Hit GitHub's latest-release endpoint. Raises on any failure;
+        returns the parsed JSON dict on success. py2app's bundled Python
+        has no link to the system trust store, so we route SSL through
+        certifi's CA bundle (transitively bundled via requests/google-auth)."""
         import ssl
         import urllib.request
         try:
-            # py2app's bundled Python has no link to the system trust
-            # store, so vanilla urlopen blows up with CERTIFICATE_VERIFY_FAILED.
-            # certifi ships an actual CA bundle and is already pulled
-            # in transitively by the google-auth / requests stack.
-            try:
-                import certifi
-                ctx = ssl.create_default_context(cafile=certifi.where())
-            except Exception:
-                ctx = ssl.create_default_context()
-            req = urllib.request.Request(
-                "https://api.github.com/repos/BrezhnevEugen/yt-sub/releases/latest",
-                headers={
-                    "User-Agent": f"YT-sub/{__version__}",
-                    "Accept": "application/vnd.github+json",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
-                data = json.load(resp)
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ctx = ssl.create_default_context()
+        req = urllib.request.Request(
+            "https://api.github.com/repos/BrezhnevEugen/yt-sub/releases/latest",
+            headers={
+                "User-Agent": f"YT-sub/{__version__}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+            return json.load(resp)
+
+    @staticmethod
+    def _is_newer(latest: str, current: str) -> bool:
+        def parts(s: str):
+            return tuple(int(x) for x in s.split(".") if x.isdigit())
+        return parts(latest) > parts(current)
+
+    def check_for_updates(self, _) -> None:
+        try:
+            data = self._fetch_latest_release()
         except Exception as e:
             rumps.alert(title="Update check failed", message=str(e))
             return
@@ -704,10 +720,7 @@ class YTSubApp(rumps.App):
             rumps.alert(title="Update check failed", message="No releases found")
             return
 
-        def _parts(s: str):
-            return tuple(int(x) for x in s.split(".") if x.isdigit())
-
-        if _parts(latest_raw) > _parts(__version__):
+        if self._is_newer(latest_raw, __version__):
             release_url = data.get("html_url") or "https://github.com/BrezhnevEugen/yt-sub/releases"
             response = rumps.alert(
                 title=f"Update available: v{latest_raw}",
@@ -725,6 +738,38 @@ class YTSubApp(rumps.App):
                 title="You're up to date",
                 message=f"v{__version__} is the latest version.",
             )
+
+    def _autocheck_updates_background(self) -> None:
+        """Silent update check on startup. Throttled to once per 6h via
+        last_update_check_at in config. Shows a system notification only
+        when a newer release exists; never alerts; swallows network
+        errors so offline starts stay clean."""
+        import time
+
+        cfg = yt_config.load()
+        last = float(cfg.get("last_update_check_at") or 0)
+        if time.time() - last < 6 * 3600:
+            return
+
+        try:
+            data = self._fetch_latest_release()
+        except Exception:
+            return  # offline / rate-limited / GitHub down — try again later
+
+        cfg = yt_config.load()
+        cfg["last_update_check_at"] = time.time()
+        yt_config.save(cfg)
+
+        latest_raw = (data.get("tag_name") or "").lstrip("v").strip()
+        if latest_raw and self._is_newer(latest_raw, __version__):
+            try:
+                rumps.notification(
+                    "YT-sub update available",
+                    f"v{latest_raw} (you have v{__version__})",
+                    "Open About → Check for updates… to download.",
+                )
+            except Exception:
+                pass
 
     def show_stats(self, _) -> None:
         try:

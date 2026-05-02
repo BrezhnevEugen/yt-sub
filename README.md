@@ -3,21 +3,22 @@
 A small macOS menu-bar utility that pulls **metadata + transcript** for any YouTube video, and exposes the same capability to AI agents over **MCP** so they can summarize, translate or quote videos on demand.
 
 ```
-🎬  YouTube URL  →  ~/YT-sub/output/<videoId>/
-                       ├── metadata.json   (snippet · contentDetails · stats)
-                       ├── transcript.json (timed segments)
-                       └── transcript.txt  (plain text)
+▶  YouTube URL  →  ~/YT-sub/output/<videoId>/
+                      ├── metadata.json   (snippet · contentDetails · stats)
+                      ├── transcript.json (timed segments)
+                      └── transcript.txt  (plain text)
 ```
+
+Releases live on [GitHub Releases](https://github.com/BrezhnevEugen/yt-sub/releases). Per-version notes are in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Components
 
-- **Tray app** (`app.py`) — runs as a menu-bar icon (no Dock), provides URL input, Google OAuth, statistics, agent integration helpers.
-- **MCP server** (`mcp_server.py`) — exposes 4 tools to any MCP host (Claude Code, Claude Desktop, Cursor, Cline, Windsurf, Continue…):
-  - `process_video(url_or_id, include_segments=False)` — fetch + cache + return summary
-  - `list_processed_videos()` — list cached videos
-  - `get_processed_video(video_id, include_segments=False)` — read from cache, no network
-  - `get_stats()` — aggregate counters over the cache
-- **Skill** (`skill/SKILL.md`) — Claude Code skill with triggers (RU/EN keywords + every YouTube URL shape) so agents auto-invoke the tools when relevant.
+- **Tray app** (`app.py`) — runs as a menu-bar icon (no Dock), provides URL input, Google OAuth, statistics, agent integration helpers. The menu-bar icon is a system-style template silhouette, auto-tinted for dark/light bar.
+- **MCP server** (`mcp_server.py`) — exposes 9 tools to any MCP host (Claude Code, Claude Desktop, Cursor, Cline, Windsurf, Continue…):
+  - **Video pipeline** — `process_video(url_or_id, include_segments=False)`, `list_processed_videos()`, `get_processed_video(video_id, include_segments=False)`.
+  - **Cookie controls** — `set_cookies_browser(browser)` / `get_cookies_browser()`, `set_cookies_file(path)` / `get_cookies_file()`. Used by agents to recover from YouTube IP-block / bot-protection without bouncing back to the user.
+  - **Diagnostics** — `get_stats()`, `get_version()`.
+- **Skill** (`skill/SKILL.md`) — Claude Code skill with triggers (RU/EN keywords + every YouTube URL shape) so agents auto-invoke the tools when relevant. Also documents the bot-protect → `set_cookies_*` recovery flow.
 
 ## Why two transcript backends
 
@@ -31,9 +32,11 @@ A signed and notarized DMG is published on GitHub Releases — no Python or deve
 
 1. Grab `YT-sub-x.y.z.dmg` from the [latest release](https://github.com/BrezhnevEugen/yt-sub/releases).
 2. Open the DMG and drag **YT-sub.app** into **Applications**.
-3. Launch it from Spotlight or `/Applications`. Look for the red ▶ icon in the menu bar.
+3. Launch it from Spotlight or `/Applications`. Look for the ▶ silhouette in the menu bar — it's a template image, so it shows dark on a light bar and white on a dark bar.
 
 The bundle ships its own Python interpreter and all dependencies (~219 MB unpacked, ~89 MB compressed). Gatekeeper accepts it without prompts because it's notarized.
+
+After install, the app silently checks for updates ~5s after each launch (throttled to once per 6 hours, hits the GitHub Releases API). If a newer version is published you get a system notification; otherwise nothing — never an alert, never blocks startup. Manual check is in **About → Check for updates…**.
 
 ### Option B: install from source
 
@@ -48,11 +51,12 @@ cd yt-sub
 `install.sh` does everything:
 
 - creates `.venv` and installs dependencies
-- generates the menu-bar PNG and a multi-resolution `.icns`
+- renders the template menu-bar PNG and bundles the iconset (designer-provided) into a multi-resolution `.icns`
 - builds and code-signs `YT-sub.app` (auto-detects your `Developer ID Application:` identity, falls back to ad-hoc if none)
 - copies it to `/Applications`
 - registers a per-user **LaunchAgent** at `~/Library/LaunchAgents/com.brezhnev.yt-sub.plist` — that's the canonical launcher (handles auto-restart on crash and, with `--login`, auto-start on login)
 - kicks off the tray immediately
+- a single-instance guard at startup writes `~/.config/yt-sub/yt-sub.pid` and refuses to start twice; cleaned via `atexit`
 
 Other forms:
 
@@ -84,7 +88,7 @@ In Google Cloud Console:
 2. Create credentials → **OAuth client ID** → application type **Desktop app** → download JSON.
 3. While the OAuth consent screen is in **Testing**, add your Google email under **Test users** (otherwise sign-in returns `403: access_denied`).
 
-In the tray menu (🎬):
+In the tray menu (▶ icon):
 
 1. **Load client_secret.json…** — pick the file you just downloaded; it gets copied to `~/.config/yt-sub/client_secret.json`.
 2. **Sign in with Google** — runs the OAuth loopback flow in the browser; token cached at `~/.config/yt-sub/token.json`.
@@ -114,7 +118,7 @@ After wiring, restart your agent host once. Then the agent will call `process_vi
 1. Open Chrome (or any Chromium browser), install [«Get cookies.txt LOCALLY»](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc).
 2. Open `https://www.youtube.com` and **make sure you are signed in**.
 3. Click the extension icon → **Export** → `youtube.com_cookies.txt` lands in `~/Downloads/`.
-4. In the YT-sub tray menu (🎬): **Cookies for yt-dlp → Load cookies.txt…** → pick the file.
+4. In the YT-sub tray menu (▶ icon): **Cookies for yt-dlp → Load cookies.txt…** → pick the file.
 
 After this, transcripts work for any YouTube video. Re-export when YouTube starts rejecting again (usually weeks later). Full background and edge cases below.
 
@@ -139,7 +143,7 @@ Sometimes both transcript backends hit YouTube's IP-based blocking ("Sign in to 
 1. Install the [**Get cookies.txt LOCALLY**](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) extension from the Chrome Web Store.
 2. Open `https://www.youtube.com` and **make sure you are signed in**. The export only contains auth cookies if there's an active session.
 3. Click the extensions icon (puzzle piece, top-right of Chrome) → **Get cookies.txt LOCALLY** → **Export**. The file downloads to `~/Downloads/youtube.com_cookies.txt`.
-4. In the YT-sub tray menu (🎬 icon): **Cookies for yt-dlp → Load cookies.txt…** and pick the downloaded file.
+4. In the YT-sub tray menu (▶ icon): **Cookies for yt-dlp → Load cookies.txt…** and pick the downloaded file.
 
 The file gets copied to `~/.config/yt-sub/cookies.txt`; the original in Downloads can be deleted. The checkmark on **Load cookies.txt…** indicates it's active. **Clear cookies.txt** removes it and falls back to whatever browser source is selected (or anonymous).
 
@@ -164,6 +168,33 @@ Agents call the MCP server. The relevant tools are:
 - `get_cookies_browser()` / `get_cookies_file()` — read current state.
 
 A configured cookies file overrides the browser source.
+
+## Tray menu structure
+
+```
+YT-sub vX.Y.Z — YouTube metadata + transcripts        (header, disabled)
+Signed in · N videos · Mh Ks                          (status, disabled)
+─
+Process URL…
+─
+Account ▸    Load client_secret.json…  ✓
+             Sign in with Google       ✓
+             Sign out
+             ─
+             Auto-start on login       (toggle, ✓ when enabled)
+Cookies for yt-dlp ▸  Load cookies.txt…  Clear cookies.txt
+                      ─
+                      (disabled) / chrome / safari / firefox / brave / edge / chromium / arc
+Output ▸     Open last result · Open output folder · Statistics
+Agents ▸     Copy MCP config · Install skill (~/.claude) · Install skill in project… · Copy skill to clipboard
+About ▸      Check for updates…
+             ─
+             Open repository on GitHub
+─
+Quit
+```
+
+Checkmarks in the *Account* and *Cookies* submenus reflect actual on-disk / in-memory state, so you can tell at a glance whether the OAuth client is loaded, whether you're signed in, and which cookies source is active.
 
 ## Statistics
 
