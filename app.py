@@ -172,7 +172,20 @@ class YTSubApp(rumps.App):
         self._mi_login_toggle = rumps.MenuItem(
             "Auto-start on login", callback=self.toggle_login_item
         )
+        # Metadata source picker (top of Account so it's the first decision).
+        self._mi_md_standard = rumps.MenuItem(
+            "Standard (no setup)", callback=self.set_metadata_backend_standard
+        )
+        self._mi_md_advanced = rumps.MenuItem(
+            "Advanced (YouTube API)", callback=self.set_metadata_backend_advanced
+        )
+        md_menu = rumps.MenuItem("Metadata source")
+        md_menu.add(self._mi_md_standard)
+        md_menu.add(self._mi_md_advanced)
+
         account_menu = rumps.MenuItem("Account")
+        account_menu.add(md_menu)
+        account_menu.add(rumps.separator)
         account_menu.add(self._mi_load_secret)
         account_menu.add(self._mi_signin)
         account_menu.add(self._mi_signout)
@@ -277,6 +290,12 @@ class YTSubApp(rumps.App):
         self._mi_open_last.set_callback(self.open_last if self._last_output else None)
         try:
             self._mi_login_toggle.state = 1 if LAUNCH_AGENT_PATH.exists() else 0
+        except Exception:
+            pass
+        try:
+            backend = yt_config.get_metadata_backend()
+            self._mi_md_standard.state = 1 if backend == "standard" else 0
+            self._mi_md_advanced.state = 1 if backend == "advanced" else 0
         except Exception:
             pass
         try:
@@ -602,6 +621,24 @@ class YTSubApp(rumps.App):
         self.title = BUSY_SUFFIX if busy else None
         self._refresh_menu()
 
+    def set_metadata_backend_standard(self, _) -> None:
+        yt_config.set_metadata_backend("standard")
+        self._refresh_menu()
+        rumps.notification(
+            "YT-sub",
+            "Metadata source: Standard",
+            "yt-dlp + oEmbed, no Google OAuth needed.",
+        )
+
+    def set_metadata_backend_advanced(self, _) -> None:
+        yt_config.set_metadata_backend("advanced")
+        self._refresh_menu()
+        rumps.notification(
+            "YT-sub",
+            "Metadata source: Advanced",
+            "YouTube Data API — sign in if you haven't yet.",
+        )
+
     def set_cookies_browser(self, sender) -> None:
         label = sender.title
         browser = None if label == "(disabled)" else label
@@ -790,8 +827,20 @@ class YTSubApp(rumps.App):
                 rumps.notification("YT-sub", "Invalid URL", str(e))
                 return
 
+            backend = yt_config.get_metadata_backend()
             try:
-                metadata = self.client.fetch_metadata(video_id)
+                if backend == "advanced":
+                    if not self.client.is_authenticated():
+                        rumps.notification(
+                            "YT-sub",
+                            "Sign in required",
+                            "Advanced backend needs Google OAuth — switch to Standard or sign in.",
+                        )
+                        return
+                    metadata = self.client.fetch_metadata(video_id)
+                else:
+                    from web_metadata import fetch_metadata_web
+                    metadata = fetch_metadata_web(video_id)
             except AuthError:
                 rumps.notification("YT-sub", "Sign in required", "Use the menu to sign in")
                 return

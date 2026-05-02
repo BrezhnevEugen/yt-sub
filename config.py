@@ -59,3 +59,30 @@ def set_cookies_file(path: Optional[str]) -> None:
     else:
         cfg.pop("ytdlp_cookies_file", None)
     save(cfg)
+
+
+METADATA_BACKENDS = ("standard", "advanced")
+
+
+def get_metadata_backend() -> str:
+    """Which path fetches video metadata.
+      'standard' — no Google OAuth, uses yt-dlp + oEmbed (web_metadata).
+      'advanced' — full YouTube Data API v3 over OAuth (precise stats).
+
+    Auto-detect when not explicitly set: if a client_secret.json exists,
+    assume the user did the API setup and prefer 'advanced'; else
+    'standard' so a fresh install works without any setup."""
+    val = (load().get("metadata_backend") or "").lower()
+    if val in METADATA_BACKENDS:
+        return val
+    from storage import CLIENT_SECRET_PATH
+    return "advanced" if CLIENT_SECRET_PATH.exists() else "standard"
+
+
+def set_metadata_backend(backend: Optional[str]) -> None:
+    cfg = load()
+    if backend and backend.lower() in METADATA_BACKENDS:
+        cfg["metadata_backend"] = backend.lower()
+    else:
+        cfg.pop("metadata_backend", None)  # falls back to auto-detect
+    save(cfg)

@@ -53,7 +53,7 @@ OPTIONS = {
     # we explicitly include it to pull its imports into the graph too.
     'includes': [
         'icon', 'storage', 'stats', 'transcript', 'youtube_client',
-        'mcp_server', 'config', 'version',
+        'mcp_server', 'config', 'version', 'web_metadata',
     ],
 }
 

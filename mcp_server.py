@@ -11,6 +11,7 @@ from stats import compute_stats
 from storage import OUTPUT_DIR
 from transcript import TranscriptError, fetch_transcript, parse_video_id
 from version import __version__
+from web_metadata import fetch_metadata_web
 from youtube_client import AuthError, YouTubeClient
 
 mcp = FastMCP("yt-sub")
@@ -65,19 +66,30 @@ def process_video(
     except ValueError as e:
         return {"error": "invalid_url", "message": str(e)}
 
-    client = _client()
-    if not client.is_authenticated():
-        return {
-            "error": "not_signed_in",
-            "message": "Open the YT-sub tray app and use Sign in with Google.",
-        }
-
-    try:
-        metadata = client.fetch_metadata(video_id)
-    except AuthError as e:
-        return {"error": "auth", "message": str(e)}
-    except Exception as e:
-        return {"error": "metadata_fetch_failed", "message": str(e)}
+    backend = config.get_metadata_backend()
+    if backend == "advanced":
+        client = _client()
+        if not client.is_authenticated():
+            return {
+                "error": "not_signed_in",
+                "message": (
+                    "Advanced metadata backend (YouTube Data API) requires "
+                    "OAuth. Either sign in via the YT-sub tray app, or "
+                    "switch to standard metadata via "
+                    "set_metadata_backend(\"standard\")."
+                ),
+            }
+        try:
+            metadata = client.fetch_metadata(video_id)
+        except AuthError as e:
+            return {"error": "auth", "message": str(e)}
+        except Exception as e:
+            return {"error": "metadata_fetch_failed", "message": str(e)}
+    else:
+        try:
+            metadata = fetch_metadata_web(video_id)
+        except Exception as e:
+            return {"error": "metadata_fetch_failed", "message": str(e)}
 
     transcript: Optional[List[Dict[str, Any]]] = None
     transcript_error: Optional[str] = None
@@ -279,6 +291,46 @@ def set_cookies_file(path: Optional[str] = None) -> Dict[str, Any]:
 def get_cookies_file() -> Dict[str, Any]:
     """Return the active cookies.txt path yt-dlp is using, or null."""
     return {"cookies_file": config.get_cookies_file()}
+
+
+@mcp.tool()
+def set_metadata_backend(backend: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Switch which path fetches video metadata.
+      "standard" — no Google OAuth required. Uses yt-dlp's extract_info
+                   when cookies are available (full metadata), and falls
+                   back to YouTube's public oEmbed endpoint (title +
+                   channel + thumbnail, always works) otherwise.
+      "advanced" — full YouTube Data API v3 over OAuth: precise view /
+                   like / comment counts, structured topicDetails,
+                   tags, status, etc. Requires the client_secret.json /
+                   sign-in flow.
+    Pass null/empty to clear the override and let YT-sub auto-detect
+    based on whether OAuth credentials exist.
+    """
+    norm = (backend or "").strip().lower() or None
+    if norm and norm not in config.METADATA_BACKENDS:
+        return {
+            "error": "unsupported_backend",
+            "message": f"Use {' / '.join(config.METADATA_BACKENDS)} or null to auto-detect.",
+            "supported": list(config.METADATA_BACKENDS),
+        }
+    config.set_metadata_backend(norm)
+    return {
+        "ok": True,
+        "metadata_backend": config.get_metadata_backend(),
+        "explicit": norm is not None,
+    }
+
+
+@mcp.tool()
+def get_metadata_backend() -> Dict[str, Any]:
+    """Return the active metadata backend (`standard` or `advanced`)
+    and the list of supported values."""
+    return {
+        "metadata_backend": config.get_metadata_backend(),
+        "supported": list(config.METADATA_BACKENDS),
+    }
 
 
 @mcp.tool()
