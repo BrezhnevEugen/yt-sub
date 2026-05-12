@@ -222,18 +222,55 @@ def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
     return None, "yt-dlp: no subtitles in preferred languages"
 
 
+def _try_whisper(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
+    """Last-resort fallback: download audio and transcribe via a Whisper
+    backend. Returns (segments, None) on success, (None, reason) on
+    failure or if disabled."""
+    from config import get_groq_api_key, get_whisper_backend
+
+    backend = get_whisper_backend()
+    if backend == "none":
+        return None, "disabled"
+    if backend == "groq":
+        key = get_groq_api_key()
+        if not key:
+            return None, "groq: no api key (set GROQ_API_KEY or use the tray)"
+        try:
+            from whisper_client import transcribe_with_groq
+        except Exception as e:
+            return None, f"whisper import: {e}"
+        try:
+            return transcribe_with_groq(video_id, key), None
+        except Exception as e:
+            return None, f"groq: {e}"
+    return None, f"unknown whisper backend: {backend}"
+
+
 def fetch_transcript(video_id: str) -> List[Dict]:
     primary, primary_err = _try_primary(video_id)
     if primary is not None:
         return primary
 
-    if primary_err in {"TranscriptsDisabled", "VideoUnavailable"}:
+    # Video is gone / region-blocked / private — no point downloading audio.
+    if primary_err == "VideoUnavailable":
         raise TranscriptError(primary_err)
 
-    ytdlp, ytdlp_err = _try_ytdlp(video_id)
-    if ytdlp is not None:
-        return ytdlp
+    # yt-dlp subtitle path makes sense unless we already know the channel
+    # disabled captions entirely.
+    ytdlp_err: Optional[str]
+    if primary_err == "TranscriptsDisabled":
+        ytdlp_err = "skipped: TranscriptsDisabled"
+    else:
+        ytdlp, ytdlp_err = _try_ytdlp(video_id)
+        if ytdlp is not None:
+            return ytdlp
+
+    whisper_segments, whisper_err = _try_whisper(video_id)
+    if whisper_segments is not None:
+        return whisper_segments
 
     raise TranscriptError(
-        f"primary={primary_err or 'unknown'} | {ytdlp_err or 'yt-dlp failed'}"
+        f"primary={primary_err or 'unknown'} | "
+        f"yt-dlp={ytdlp_err or 'failed'} | "
+        f"whisper={whisper_err or 'disabled'}"
     )

@@ -4,6 +4,31 @@ All notable changes to YT-sub. Format roughly follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+## [0.1.14] — 2026-05-12
+
+### Added
+- **`search_transcript(video_id, query, max_results=10)` MCP tool.** Case-insensitive substring search over a cached transcript; returns matched segments with `mm:ss` timestamps and clickable `youtu.be/<id>?t=<sec>s` URLs. Lets agents answer "where does he talk about X?" and pull exact-quote-with-citation without dumping the whole transcript back through the model.
+- **`process_playlist(playlist, limit=50, skip_cached=True)` MCP tool.** Batch-process a playlist URL, a watch URL with `&list=...`, or a comma/newline-separated list of video URLs. Cached videos are skipped by default. Returns `{processed, skipped_cached, failed}` buckets — covers "обработай плейлист / серию роликов" without the agent looping `process_video` manually.
+- **`get_channel_info(channel, limit=10)` MCP tool.** Resolve a channel (handle `@name`, bare handle, channel id `UC...`, or URL) and return channel metadata + the latest `limit` videos. Pairs naturally with `process_playlist` for "что вышло на канале X" flows.
+- **Whisper fallback for videos without subtitles.** New `whisper_client.py` ships a Groq Whisper integration (whisper-large-v3-turbo). Opt-in via the new tray submenu **Account ▸ Transcript fallback ▸ Whisper (Groq)** and **Set Groq API key…**, or via MCP tools `set_whisper_backend("groq")` / `set_groq_api_key("...")`. yt-dlp downloads a low-bitrate audio track (itag 139, ~48 kbps m4a) to stay under Groq's 25 MB upload cap; ~25 min videos fit comfortably. `transcript.fetch_transcript()` calls Whisper as the last fallback after youtube-transcript-api and yt-dlp subtitles both fail. **Audio is uploaded to a third party — skill instructs agents to ask permission before enabling.**
+
+### Changed
+- **`skill/SKILL.md`** — new mandatory **Output template for summaries** section. Agents default to TL;DR → 5–10 timestamped bullets (clickable `[mm:ss](youtu.be/...?t=Xs)` links) → takeaway, without waiting for the user to ask for quotes. Removed the stale "OAuth required" framing — standard backend (v0.1.13) works without sign-in. Tools list expanded with `search_transcript`, `process_playlist`, `get_channel_info`, the `set/get_metadata_backend` pair, and the whisper-backend tools.
+- **`mcp_server.process_video`** internals split — common path extracted as `_process_video_by_id()` so `process_playlist` can reuse it. Behavior is unchanged; thin tool wrapper just calls `parse_video_id` + the internal function.
+
+### Fixed
+- **`mcp_server.set_cookies_file` latent crash:** the function used `Path(path).expanduser()` but `pathlib.Path` was never imported. The bug never surfaced in production because the tray UI copies cookies.txt via its own handler; the MCP tool would have NameError'd on first call. Added the missing import.
+
+## [0.1.13] — 2026-05-12
+
+### Added
+- **Standard / advanced metadata backends — OAuth requirement dropped.** New `web_metadata.py` ships a no-OAuth path: tries `yt-dlp.extract_info` first (rich metadata when cookies are available), falls back to YouTube's public oEmbed endpoint (title + channel + thumbnail, always works). `config.get_metadata_backend()` auto-detects: **advanced** (YouTube Data API v3) if `~/.config/yt-sub/client_secret.json` exists, **standard** otherwise — so a fresh install summarizes a video with zero setup.
+- **Account ▸ Metadata source ▸ Standard / Advanced** submenu in the tray (with checkmark state).
+- **`set_metadata_backend(backend)` / `get_metadata_backend()` MCP tools** so agents can switch on user request.
+
+### Changed
+- `mcp_server.process_video` and `app._process` dispatch on the active backend.
+
 ## [0.1.12] — 2026-05-02
 
 ### Added

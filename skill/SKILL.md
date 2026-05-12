@@ -5,7 +5,7 @@ description: Fetch YouTube video metadata and transcript (subtitles) via the yt-
 
 # yt-sub
 
-Skill for working with the `yt-sub` MCP server, which exposes three tools for fetching YouTube data. The user has already authorized Google OAuth via the YT-sub tray app; this skill assumes the same credentials are reused.
+Skill for working with the `yt-sub` MCP server, which fetches YouTube metadata + transcripts and caches them under `~/YT-sub/output/<videoId>/`.
 
 ## When to use
 
@@ -16,46 +16,71 @@ Trigger on:
 
 ## Tools
 
-The `yt-sub` MCP server provides:
-
-- **`process_video(url_or_id, include_segments=False)`** — primary action. Fetches metadata via YouTube Data API v3 and transcript via youtube-transcript-api, saves to `~/YT-sub/output/<videoId>/`, and returns metadata fields, `transcript_text` (plain), `output_dir`, and `transcript_error` if subtitles were unavailable. Pass `include_segments=True` to also return timed segments (`[{text, start, duration}, …]`).
-- **`list_processed_videos()`** — list previously cached videos (newest first).
-- **`get_processed_video(video_id, include_segments=False)`** — re-read a cached video from disk without hitting YouTube again.
-- **`get_stats()`** — aggregate counters over the cache: number of videos, unique channels, total video duration, transcript word/char totals, last processed video. Use when the user asks "сколько роликов я обработал", "статистика", "how many videos", etc.
-- **`get_cookies_browser()`** — read which browser yt-dlp uses for cookies (or null if disabled).
-- **`set_cookies_browser(browser)`** — point yt-dlp at a browser's cookie jar (`"chrome" | "safari" | "firefox" | "brave" | "edge" | "chromium" | "arc"`), or pass null/empty to disable. Persists in `~/.config/yt-sub/config.json`.
-- **`set_cookies_file(path)`** / **`get_cookies_file()`** — point yt-dlp at a Netscape-format `cookies.txt` (the file is copied into `~/.config/yt-sub/cookies.txt` so the original can move). Use this when browser-cookies fail: Safari is TCC-sandboxed on macOS, Chrome 130+ uses App-Bound Encryption that yt-dlp cannot decrypt, Firefox may not be installed. Pass null/empty to clear. **A configured cookies file overrides the browser cookies setting.**
+- **`process_video(url_or_id, include_segments=False)`** — primary action. Fetches metadata + transcript, saves to `~/YT-sub/output/<videoId>/`, returns metadata fields, `transcript_text`, `output_dir`, `transcript_error`. Pass `include_segments=True` for timed segments (`[{text, start, duration}, …]`) — needed when you plan to cite timestamps.
+- **`process_playlist(playlist, limit=50, skip_cached=True)`** — batch-process a playlist URL, a watch URL with `&list=...`, or a comma/newline-separated list of video URLs. Already-cached videos are skipped by default. Returns `{processed, skipped_cached, failed}` buckets — use this for "обработай этот плейлист", "summarize this series", channel deep-dives, etc., instead of looping `process_video` yourself.
+- **`get_channel_info(channel, limit=10)`** — resolve a channel (handle like `@mkbhd`, bare handle, channel id `UC...`, or full URL) and return channel metadata + the latest `limit` videos with `video_id`, `title`, `duration`, `view_count`, `upload_date`. Hand the video ids straight to `process_video` / `process_playlist` for "что вышло на канале X на этой неделе" follow-ups.
+- **`list_processed_videos()`** — list cached videos (newest first).
+- **`get_processed_video(video_id, include_segments=False)`** — re-read a cached video from disk without hitting YouTube.
+- **`search_transcript(video_id, query, max_results=10)`** — substring search over a cached transcript. Returns matched segments with `mm:ss` timestamps and clickable `youtu.be/<id>?t=<sec>s` URLs. Use for "where does he talk about X?" and exact-quote-with-citation tasks; cheaper than dumping the whole transcript back to the model.
+- **`get_stats()`** — counts, unique channels, total duration, transcript word/char totals, last processed video, server version.
+- **`get_metadata_backend()`** / **`set_metadata_backend(backend)`** — switch between `"standard"` (no OAuth — yt-dlp + oEmbed) and `"advanced"` (YouTube Data API v3 over OAuth, precise stats). Auto-detected based on whether `~/.config/yt-sub/client_secret.json` exists.
+- **`get_whisper_backend()`** / **`set_whisper_backend(backend)`** / **`set_groq_api_key(key)`** — configure the transcript fallback used when a video has no subtitles. `"groq"` transcribes audio via Groq's Whisper API (requires API key, 25 MB upload cap → ~25 min audio). `"none"` (default) returns a `transcript_error` instead.
+- **`get_cookies_browser()`** / **`set_cookies_browser(browser)`** — point yt-dlp at a browser's cookie jar (`"chrome" | "safari" | "firefox" | "brave" | "edge" | "chromium" | "arc"`), or pass null/empty to disable.
+- **`get_cookies_file()`** / **`set_cookies_file(path)`** — point yt-dlp at a Netscape-format `cookies.txt`. Wins over browser cookies when both are set. Use this when browser cookies fail (Safari TCC sandbox, Chrome 130+ App-Bound Encryption, Firefox not installed).
 
 ## Workflow
 
 1. Extract URL or video id from the user's message.
-2. If the video has likely been processed before, prefer `list_processed_videos` then `get_processed_video` to save a quota hit. Otherwise call `process_video`.
-3. If the response is `{"error": "not_signed_in", …}`, tell the user to open the YT-sub tray app (🎬 icon in the macOS menu bar) and choose **Sign in with Google**, then stop. Do not retry until they confirm.
-4. If the response is `{"error": "invalid_url", …}`, ask the user for a valid YouTube URL or 11-char video id.
-5. If `transcript_error` is set, subtitles are not available — say so explicitly and proceed with metadata only.
-6. Use the `transcript_text` for whatever the user asked (summarize, translate, extract quotes, find timestamps, etc.).
+2. If the video is likely cached already, prefer `list_processed_videos` then `get_processed_video`. Otherwise call `process_video`. When the user is going to ask for quotes or timestamped highlights, set `include_segments=True` up front so you don't need a second round-trip.
+3. Handle errors:
+   - `{"error": "invalid_url", …}` — ask for a valid URL or 11-char video id.
+   - `{"error": "not_signed_in", …}` — only happens in **advanced** metadata backend. Either tell the user to open the YT-sub tray app and choose **Sign in with Google**, or call `set_metadata_backend("standard")` to switch to the no-OAuth path and retry once.
+4. If `transcript_error` is set, subtitles are not available. Two options:
+   - **Proceed with metadata only** — say "(no transcript available)" and summarize from title/description/tags. Honest fallback for short or simple cases.
+   - **Offer Whisper fallback** — if the user cares about the content (long lecture, talk, podcast without captions), call `get_whisper_backend()`. If it returns `"none"`, mention that they can enable Whisper transcription via Groq: `set_whisper_backend("groq")` + `set_groq_api_key("...")` (free key at https://console.groq.com/keys). After enabling, retry `process_video`. **Don't enable it silently — the audio is uploaded to a third party, the user should decide.**
+5. Use `transcript_text` / `transcript_segments` for whatever the user asked.
 
-### When transcripts fail with bot-protection
+## Output template for summaries
 
-`transcript_error` mentioning *"YouTube is blocking requests from your IP"*, *"Sign in to confirm you're not a bot"*, or *"Operation not permitted"* (Safari TCC) means YouTube refused the un-authenticated request. Recovery flow:
+When the user asks for a summary, recap, or "о чём ролик", **default to this shape** (don't ask permission, just deliver it):
+
+```
+**[Title]** — [Channel] · [duration if known]
+
+**TL;DR.** One or two sentences capturing the actual claim of the video.
+
+**Key points**
+- [[mm:ss](https://youtu.be/<id>?t=<sec>s)] — concrete idea, named tool, fact, or quoted line. Not a generic placeholder.
+- [[mm:ss](https://youtu.be/<id>?t=<sec>s)] — next.
+- … 5–10 bullets for a typical 15–40 min video; fewer for shorts, more for >1h.
+
+**Takeaway / so what.** One line on why the video matters, who it's for, or what to do with it.
+```
+
+Rules:
+- **Always link timestamps**, even if the user didn't explicitly ask — they make the summary verifiable and skimmable, which is the whole reason to use this tool over watching.
+- Pick timestamps where the idea is actually *introduced*, not random hits — use `transcript_segments` and quote/paraphrase the segment near `start`.
+- Use `mm:ss` for videos under an hour, `h:mm:ss` for longer.
+- Keep bullets concrete and specific. "He discusses pricing" is dead weight; "Pricing tier breakdown — $9 hobby / $29 team / $99 ent" earns its row.
+- If transcript is missing, fall back to metadata-only: title, channel, description, tags, duration. Say "(no transcript available)" once at the top and skip the timestamped bullets — don't fake them.
+
+For follow-up questions about the same video in later turns, call `get_processed_video(video_id)` to skip the API calls, or `search_transcript(video_id, query)` to grab quotes on a specific topic.
+
+## Bot-protection recovery (cookies)
+
+`transcript_error` mentioning *"YouTube is blocking requests from your IP"*, *"Sign in to confirm you're not a bot"*, or *"Operation not permitted"* (Safari TCC) means YouTube refused the un-authenticated request.
 
 1. Call `get_cookies_file()` and `get_cookies_browser()` to see the current state.
-2. If neither is set, ask the user to either pick a cookies.txt via the tray (**Cookies for yt-dlp → Load cookies.txt…**) or call `set_cookies_browser("firefox")` if they have Firefox logged in. Point them at the README section *"Bypassing YouTube's bot-protection (cookies)"* for the export how-to: <https://github.com/BrezhnevEugen/yt-sub#bypassing-youtubes-bot-protection-cookies>.
-3. After the user reports they've loaded cookies (or you've called `set_cookies_file(path)` with a path they handed you), retry `process_video`. The cookies.txt path **overrides** browser source when both are configured.
-4. If it still fails, the cookies.txt is likely from a logged-out session — ask them to verify they're signed in to YouTube in the browser before re-exporting.
+2. If neither is set, ask the user to either pick a cookies.txt via the tray (**Cookies for yt-dlp → Load cookies.txt…**) or call `set_cookies_browser("firefox")` if they have Firefox logged in. Point them at the README section *"Bypassing YouTube's bot-protection (cookies)"*: <https://github.com/BrezhnevEugen/yt-sub#bypassing-youtubes-bot-protection-cookies>.
+3. After the user reports cookies are loaded, retry `process_video`. The cookies.txt path **overrides** browser source.
+4. If it still fails, the cookies.txt is likely from a logged-out session — ask them to confirm they're signed in to YouTube in the browser before re-exporting.
 
 Do **not** repeatedly retry `process_video` without changing state — every attempt counts toward the IP-block budget.
 
 ## Output dir layout
 
-`~/YT-sub/output/<videoId>/` contains:
-- `metadata.json` — full YouTube Data API response (snippet/contentDetails/statistics/status/topicDetails)
+`~/YT-sub/output/<videoId>/`:
+- `metadata.json` — full metadata response (shape depends on backend)
 - `transcript.json` — timed segments (only if subtitles were available)
-- `transcript.txt` — plain text (only if subtitles were available)
-- `transcript.error.txt` — present only if the subtitles fetch failed (with the reason)
-
-For follow-up questions about the same video in later turns, call `get_processed_video(video_id)` instead of `process_video` — it reads from disk and skips both API calls.
-
-## Quoting / timestamps
-
-If the user asks for quotes or timestamps, request `include_segments=True`. Each segment has `start` (seconds) and `duration`. Convert to `mm:ss` or `hh:mm:ss` for display, and link as `https://youtu.be/<videoId>?t=<int(start)>s`.
+- `transcript.txt` — plain text
+- `transcript.error.txt` — only if subtitles fetch failed (with the reason)

@@ -86,3 +86,44 @@ def set_metadata_backend(backend: Optional[str]) -> None:
     else:
         cfg.pop("metadata_backend", None)  # falls back to auto-detect
     save(cfg)
+
+
+WHISPER_BACKENDS = ("none", "groq")
+
+
+def get_whisper_backend() -> str:
+    """Transcript fallback when YouTube has no subtitles.
+      'none' (default) — give up, return transcript_error.
+      'groq' — transcribe audio via Groq Whisper API."""
+    val = (load().get("whisper_backend") or "").lower()
+    return val if val in WHISPER_BACKENDS else "none"
+
+
+def set_whisper_backend(backend: Optional[str]) -> None:
+    cfg = load()
+    if backend and backend.lower() in WHISPER_BACKENDS and backend.lower() != "none":
+        cfg["whisper_backend"] = backend.lower()
+    else:
+        cfg.pop("whisper_backend", None)
+    save(cfg)
+
+
+def get_groq_api_key() -> Optional[str]:
+    """Groq API key for the 'groq' whisper backend. Falls back to
+    GROQ_API_KEY env var so headless users / CI can avoid touching the
+    config file."""
+    import os
+    cfg_val = load().get("groq_api_key")
+    if cfg_val:
+        return str(cfg_val).strip() or None
+    env_val = os.environ.get("GROQ_API_KEY")
+    return env_val or None
+
+
+def set_groq_api_key(key: Optional[str]) -> None:
+    cfg = load()
+    if key:
+        cfg["groq_api_key"] = key.strip()
+    else:
+        cfg.pop("groq_api_key", None)
+    save(cfg)

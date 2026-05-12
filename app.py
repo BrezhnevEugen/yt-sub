@@ -183,8 +183,25 @@ class YTSubApp(rumps.App):
         md_menu.add(self._mi_md_standard)
         md_menu.add(self._mi_md_advanced)
 
+        # Transcript fallback (Whisper) picker.
+        self._mi_wh_off = rumps.MenuItem(
+            "Off", callback=self.set_whisper_backend_off
+        )
+        self._mi_wh_groq = rumps.MenuItem(
+            "Whisper (Groq)", callback=self.set_whisper_backend_groq
+        )
+        self._mi_groq_key = rumps.MenuItem(
+            "Set Groq API key…", callback=self.set_groq_api_key_menu
+        )
+        wh_menu = rumps.MenuItem("Transcript fallback")
+        wh_menu.add(self._mi_wh_off)
+        wh_menu.add(self._mi_wh_groq)
+        wh_menu.add(rumps.separator)
+        wh_menu.add(self._mi_groq_key)
+
         account_menu = rumps.MenuItem("Account")
         account_menu.add(md_menu)
+        account_menu.add(wh_menu)
         account_menu.add(rumps.separator)
         account_menu.add(self._mi_load_secret)
         account_menu.add(self._mi_signin)
@@ -296,6 +313,10 @@ class YTSubApp(rumps.App):
             backend = yt_config.get_metadata_backend()
             self._mi_md_standard.state = 1 if backend == "standard" else 0
             self._mi_md_advanced.state = 1 if backend == "advanced" else 0
+            wb = yt_config.get_whisper_backend()
+            self._mi_wh_off.state = 1 if wb == "none" else 0
+            self._mi_wh_groq.state = 1 if wb == "groq" else 0
+            self._mi_groq_key.state = 1 if yt_config.get_groq_api_key() else 0
         except Exception:
             pass
         try:
@@ -637,6 +658,60 @@ class YTSubApp(rumps.App):
             "YT-sub",
             "Metadata source: Advanced",
             "YouTube Data API — sign in if you haven't yet.",
+        )
+
+    def set_whisper_backend_off(self, _) -> None:
+        yt_config.set_whisper_backend(None)
+        self._refresh_menu()
+        rumps.notification(
+            "YT-sub",
+            "Transcript fallback: Off",
+            "Videos without subtitles will return a transcript error.",
+        )
+
+    def set_whisper_backend_groq(self, _) -> None:
+        yt_config.set_whisper_backend("groq")
+        self._refresh_menu()
+        if not yt_config.get_groq_api_key():
+            rumps.alert(
+                title="Groq API key not set",
+                message=(
+                    "Whisper fallback via Groq is selected, but no API key "
+                    "is configured. Use 'Set Groq API key…' to add one. "
+                    "Get a free key at https://console.groq.com/keys."
+                ),
+            )
+        else:
+            rumps.notification(
+                "YT-sub",
+                "Transcript fallback: Whisper (Groq)",
+                "Videos without subtitles will be transcribed via Groq.",
+            )
+
+    def set_groq_api_key_menu(self, _) -> None:
+        current = yt_config.get_groq_api_key() or ""
+        masked_default = current  # plain text — rumps Window has no secure field
+        w = rumps.Window(
+            title="Groq API key",
+            message=(
+                "Paste your Groq API key (get one free at "
+                "https://console.groq.com/keys). Leave empty to clear."
+            ),
+            default_text=masked_default,
+            ok="Save",
+            cancel="Cancel",
+            dimensions=(360, 22),
+        )
+        resp = w.run()
+        if not resp.clicked:
+            return
+        new_key = (resp.text or "").strip()
+        yt_config.set_groq_api_key(new_key or None)
+        self._refresh_menu()
+        rumps.notification(
+            "YT-sub",
+            "Groq API key " + ("saved" if new_key else "cleared"),
+            "",
         )
 
     def set_cookies_browser(self, sender) -> None:
