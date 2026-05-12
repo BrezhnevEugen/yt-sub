@@ -4,6 +4,14 @@ All notable changes to YT-sub. Format roughly follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+## [0.1.17] — 2026-05-12
+
+### Changed
+- **Styled DMG installer with a designed backdrop.** Replaces the raw `hdiutil create` flow with `dmgbuild` + a Finder-driven layout pass. Mounted window opens at 540×380 with the `.app` icon at (130, 200) and an `Applications` shortcut at (410, 200) — a red triple-chevron arrow runs between them on a soft off-white-to-cool-gray gradient, eyebrow caps "INSTALL" + "YT-sub" + "Drag YT-sub to Applications to install" stack tight up top. Toolbar, sidebar, status bar and path bar are hidden so the install window reads as one calm card instead of a Finder window.
+- **Background image is generated, not hand-painted.** New `tools/make_dmg_background.py` renders `assets/dmg-background.png` via Pillow at 540×380 (@2x of a 270×190 point canvas; Finder stretches it to fill the 540×380 pt window). Re-run the script to iterate; the PNG is committed.
+- **Finder-blessed layout via AppleScript round-trip.** dmgbuild writes `.DS_Store` directly through Python; modern Finder (Sonoma / Tahoe) silently ignores window-bounds + chrome-visibility entries written that way — only `.DS_Store` written by Finder itself sticks. `release.sh` now: builds an initial DMG via dmgbuild → converts to UDRW → mounts → runs `dmg_setup.applescript` (sets `bounds`, `toolbar visible`, `statusbar visible`, icon view options) → detaches → recompresses to UDZO. `dmg_setup.applescript` queries the volume via POSIX-file-as-alias rather than `tell disk "VOLNAME"` so it works even with "Show external disks on Desktop" disabled in Finder Preferences (which hides DMG volumes from Finder's `disk` collection).
+- **Build deps separated from runtime deps.** `dmgbuild` and `Pillow` are pulled into the venv on demand from `release.sh` rather than `requirements.txt`, so end users running `install.sh` for source-mode don't carry Pillow.
+
 ## [0.1.16] — 2026-05-12
 
 ### Changed

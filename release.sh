@@ -46,6 +46,11 @@ if [ -z "$SIGN_IDENTITY" ]; then
 fi
 echo "Signing identity: $SIGN_IDENTITY"
 
+step "Build-time deps (dmgbuild for the styled DMG, Pillow for its background)"
+# Idempotent — pip skips if already installed. Kept out of the runtime
+# requirements.txt so end users running install.sh don't pull Pillow.
+.venv/bin/pip install --quiet dmgbuild Pillow
+
 if [ "$SKIP_BUILD" -eq 0 ]; then
     step "py2app build"
     rm -rf build dist
@@ -124,18 +129,30 @@ xcrun stapler validate "$APP_DIR"
 
 step "Building DMG ($DMG_PATH)"
 rm -f "$DMG_PATH"
-DMG_STAGE="$(mktemp -d)/dmg-stage"
-mkdir -p "$DMG_STAGE"
-cp -R "$APP_DIR" "$DMG_STAGE/"
-ln -s /Applications "$DMG_STAGE/Applications"
+# Use dmgbuild for the styled installer (background image, fixed icon
+# positions, no toolbar/sidebar chrome). Source-of-truth for the layout
+# is dmg_settings.py; the @2x background lives at
+# assets/dmg-background.png (regenerate via tools/make_dmg_background.py).
+DMG_INITIAL="$(mktemp -d)/initial.dmg"
+.venv/bin/dmgbuild \
+    -s dmg_settings.py \
+    -D app="$APP_DIR" \
+    "$DMG_VOL" \
+    "$DMG_INITIAL"
 
-hdiutil create \
-    -fs HFS+ \
-    -volname "$DMG_VOL" \
-    -srcfolder "$DMG_STAGE" \
-    -format UDZO \
-    -ov \
-    "$DMG_PATH" >/dev/null
+# dmgbuild writes .DS_Store via Python, which modern Finder (Sonoma /
+# Tahoe) silently ignores for window bounds + chrome visibility — only
+# layout written by Finder itself sticks. Round-trip through UDRW: mount,
+# run dmg_setup.applescript so Finder blesses the layout, then convert
+# back to compressed UDZO.
+DMG_RW="$(mktemp -d)/rw.dmg"
+hdiutil convert "$DMG_INITIAL" -format UDRW -o "$DMG_RW" -quiet
+hdiutil detach "/Volumes/$DMG_VOL" -quiet 2>/dev/null || true
+hdiutil attach "$DMG_RW" -nobrowse -noautoopen -quiet
+osascript dmg_setup.applescript "$DMG_VOL"
+sleep 1
+hdiutil detach "/Volumes/$DMG_VOL" -quiet
+hdiutil convert "$DMG_RW" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" -quiet
 echo "DMG: $(du -h "$DMG_PATH" | cut -f1)"
 
 step "Code-signing the DMG"
