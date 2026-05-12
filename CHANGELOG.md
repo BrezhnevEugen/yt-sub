@@ -4,6 +4,16 @@ All notable changes to YT-sub. Format roughly follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+## [0.1.15] — 2026-05-12
+
+### Added
+- **In-app self-update.** The "Update available" alert now offers three buttons: **Install update** (download the DMG, swap the bundle, relaunch — all automatic), **Open release page** (manual download / changelog), **Later**. New `updater.py` module handles the dance: download → `hdiutil attach -nobrowse -readonly` → `shutil.copytree` the `.app` out → `hdiutil detach` → write a detached shell-script relauncher that waits for the running PID to die, removes the old bundle, strips the `com.apple.quarantine` xattr, moves the new one into place, and `open`s it. macOS Gatekeeper verifies notarization on the relaunched bundle so we don't sign-check ourselves.
+- **Background autocheck caches the release JSON.** When the 5s-after-startup autocheck finds a newer version, it stashes the GitHub-API response on `self._pending_release`, so the next manual "Check for updates…" can show the Install button immediately without a second API round-trip.
+
+### Notes
+- Self-update requires the .app to be writable by the current user — works for the standard "drag to /Applications" or "keep in ~/Applications" placements. If the bundle lives somewhere read-only the relauncher will fail loudly via system notification.
+- Sparkle was considered but skipped: it ships as an ObjC framework and doesn't bundle cleanly via py2app. Hand-rolled updater is ~150 LOC, no extra framework dependency.
+
 ## [0.1.14] — 2026-05-12
 
 ### Added

@@ -153,6 +153,7 @@ class YTSubApp(rumps.App):
         self.client = YouTubeClient()
         self._last_output: Optional[Path] = None
         self._busy = False
+        self._pending_release: Optional[dict] = None
 
         # Header + status (both disabled, just informative).
         self._header = rumps.MenuItem(
@@ -821,34 +822,82 @@ class YTSubApp(rumps.App):
         return parts(latest) > parts(current)
 
     def check_for_updates(self, _) -> None:
-        try:
-            data = self._fetch_latest_release()
-        except Exception as e:
-            rumps.alert(title="Update check failed", message=str(e))
-            return
+        # Reuse the release dict cached by the background autocheck so
+        # we don't re-hit the API for the same answer.
+        data = getattr(self, "_pending_release", None)
+        if not data:
+            try:
+                data = self._fetch_latest_release()
+            except Exception as e:
+                rumps.alert(title="Update check failed", message=str(e))
+                return
 
         latest_raw = (data.get("tag_name") or "").lstrip("v").strip()
         if not latest_raw:
             rumps.alert(title="Update check failed", message="No releases found")
             return
 
-        if self._is_newer(latest_raw, __version__):
-            release_url = data.get("html_url") or "https://github.com/BrezhnevEugen/yt-sub/releases"
-            response = rumps.alert(
-                title=f"Update available: v{latest_raw}",
-                message=(
-                    f"You have v{__version__}.\n\n"
-                    "Open the GitHub release page to download the new DMG."
-                ),
-                ok="Open release page",
-                cancel="Later",
-            )
-            if response:
-                subprocess.run(["open", release_url])
-        else:
+        if not self._is_newer(latest_raw, __version__):
+            self._pending_release = None
             rumps.alert(
                 title="You're up to date",
                 message=f"v{__version__} is the latest version.",
+            )
+            return
+
+        release_url = data.get("html_url") or "https://github.com/BrezhnevEugen/yt-sub/releases"
+        # rumps.alert returns: 1 = ok, 0 = cancel, -1 = other.
+        response = rumps.alert(
+            title=f"Update available: v{latest_raw}",
+            message=(
+                f"You have v{__version__}.\n\n"
+                "Install update — download the DMG, swap the app, and relaunch automatically.\n"
+                "Open release page — read changelog / download manually."
+            ),
+            ok="Install update",
+            cancel="Later",
+            other="Open release page",
+        )
+        if response == 1:
+            threading.Thread(
+                target=self._do_self_update, args=(data,), daemon=True
+            ).start()
+        elif response == -1:
+            subprocess.run(["open", release_url])
+
+    def _do_self_update(self, release: dict) -> None:
+        """Daemon-thread: download, swap, relaunch. UI calls (alert,
+        Window) are NOT safe off the main thread — only use
+        rumps.notification() here."""
+        import os as _os
+        import signal as _signal
+        import time as _time
+
+        from updater import UpdateError, install_update
+
+        tag = (release.get("tag_name") or "").lstrip("v") or "?"
+        try:
+            self.title = "↓ Updating…"
+            rumps.notification(
+                "YT-sub", "Downloading update…", f"v{tag}"
+            )
+            install_update(release)
+            rumps.notification(
+                "YT-sub", "Update ready", "Restarting YT-sub…"
+            )
+            # The relauncher is now waiting on our PID. Give the
+            # notification a moment to surface, then exit cleanly so
+            # rumps shuts down its run loop and the relauncher can
+            # swap the bundle.
+            _time.sleep(1.0)
+            _os.kill(_os.getpid(), _signal.SIGTERM)
+        except UpdateError as e:
+            self.title = None
+            rumps.notification("YT-sub", "Update failed", str(e)[:200])
+        except Exception as e:
+            self.title = None
+            rumps.notification(
+                "YT-sub", "Update failed", f"Unexpected: {str(e)[:180]}"
             )
 
     def _autocheck_updates_background(self) -> None:
@@ -874,11 +923,15 @@ class YTSubApp(rumps.App):
 
         latest_raw = (data.get("tag_name") or "").lstrip("v").strip()
         if latest_raw and self._is_newer(latest_raw, __version__):
+            # Cache the release dict so the next manual "Check for
+            # updates…" can offer Install immediately without re-hitting
+            # the API.
+            self._pending_release = data
             try:
                 rumps.notification(
                     "YT-sub update available",
                     f"v{latest_raw} (you have v{__version__})",
-                    "Open About → Check for updates… to download.",
+                    "Open About → Check for updates… to install.",
                 )
             except Exception:
                 pass
