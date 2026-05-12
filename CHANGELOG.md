@@ -4,6 +4,12 @@ All notable changes to YT-sub. Format roughly follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+## [0.1.16] — 2026-05-12
+
+### Changed
+- **Update dialog redesigned with native AppKit.** New `update_ui.py` drops down past `rumps.alert` and builds an `NSAlert` directly: the app icon (from `assets/yt_icon.icns`) replaces the system default, the GitHub release body is cleaned of fenced code blocks / heading marks and rendered in a scrollable `NSTextView` accessory (420×200 pt), and the three buttons get an explicit primary (**Install update**) with `⎋` mapped to **Later** instead of cancelling-as-Install. `NSApplication.activateIgnoringOtherApps_(True)` is called first so the alert surfaces above the focused app — without it, an LSUIElement can have its alert end up behind the user's current window.
+- **Live download progress in the menu-bar title.** While the DMG is downloading, the tray title shows `↓ 42 %` (throttled to ~4 Hz so AppKit isn't thrashed on every 64 KB chunk), flips to `Installing…` while `hdiutil` copies the new bundle out, and disappears once the relauncher takes over. Replaces the static `↓ Updating…` placeholder from v0.1.15.
+
 ## [0.1.15] — 2026-05-12
 
 ### Added

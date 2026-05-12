@@ -846,29 +846,31 @@ class YTSubApp(rumps.App):
             return
 
         release_url = data.get("html_url") or "https://github.com/BrezhnevEugen/yt-sub/releases"
-        # rumps.alert returns: 1 = ok, 0 = cancel, -1 = other.
-        response = rumps.alert(
-            title=f"Update available: v{latest_raw}",
-            message=(
-                f"You have v{__version__}.\n\n"
-                "Install update — download the DMG, swap the app, and relaunch automatically.\n"
-                "Open release page — read changelog / download manually."
-            ),
-            ok="Install update",
-            cancel="Later",
-            other="Open release page",
+        from update_ui import INSTALL, OPEN_RELEASE, show_update_dialog
+        icon_path = None
+        try:
+            from icon import ensure_icns
+            icon_path = ensure_icns()
+        except Exception:
+            pass
+        choice = show_update_dialog(
+            current_version=__version__,
+            latest_version=latest_raw,
+            release_body=data.get("body", "") or "",
+            icon_path=icon_path,
         )
-        if response == 1:
+        if choice == INSTALL:
             threading.Thread(
                 target=self._do_self_update, args=(data,), daemon=True
             ).start()
-        elif response == -1:
+        elif choice == OPEN_RELEASE:
             subprocess.run(["open", release_url])
 
     def _do_self_update(self, release: dict) -> None:
         """Daemon-thread: download, swap, relaunch. UI calls (alert,
         Window) are NOT safe off the main thread — only use
-        rumps.notification() here."""
+        rumps.notification() and self.title here. Live progress is
+        surfaced in the menu-bar title (`↓ 42%`)."""
         import os as _os
         import signal as _signal
         import time as _time
@@ -876,12 +878,28 @@ class YTSubApp(rumps.App):
         from updater import UpdateError, install_update
 
         tag = (release.get("tag_name") or "").lstrip("v") or "?"
+
+        last_paint = [0.0]
+
+        def on_progress(downloaded: int, total: int) -> None:
+            if not total:
+                return
+            now = _time.monotonic()
+            # Throttle to ~4 Hz so we're not thrashing AppKit on every
+            # 64 KB chunk of a 75 MB download.
+            if now - last_paint[0] < 0.25 and downloaded < total:
+                return
+            last_paint[0] = now
+            pct = int(100 * downloaded / total)
+            self.title = f"↓ {pct}%"
+
         try:
-            self.title = "↓ Updating…"
+            self.title = "↓ 0%"
             rumps.notification(
                 "YT-sub", "Downloading update…", f"v{tag}"
             )
-            install_update(release)
+            install_update(release, progress=on_progress)
+            self.title = "Installing…"
             rumps.notification(
                 "YT-sub", "Update ready", "Restarting YT-sub…"
             )

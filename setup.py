@@ -54,7 +54,7 @@ OPTIONS = {
     'includes': [
         'icon', 'storage', 'stats', 'transcript', 'youtube_client',
         'mcp_server', 'config', 'version', 'web_metadata',
-        'whisper_client', 'updater',
+        'whisper_client', 'updater', 'update_ui',
     ],
 }
 
