@@ -4,6 +4,19 @@ All notable changes to YT-sub. Format roughly follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+## [0.1.18] — 2026-05-13
+
+### Changed
+- **Pinned yt-dlp ≥ 2026.2.21.** Previous floor was `>=2024.1.1`, which on a fresh `install.sh` would resolve to whatever happens to be on PyPI but didn't guarantee the YouTube extractor fixes shipped through late 2025 / early 2026 — PO Token detection, Firefox 142+/147+ cookie DB v17 reads, `web_safari` as the default player_client, and the curl_cffi 0.14 bridge. Anyone re-running `install.sh` after 0.1.18 lands gets the current extractor on first install.
+- **Anchored YouTube `player_client = web_safari`.** New `config.ytdlp_common_opts()` spreads `extractor_args={'youtube': {'player_client': ['web_safari']}}` into every yt-dlp call site (transcript subtitles + audio download for Whisper + playlist resolve + channel info + standard-backend metadata). The YouTube default flipped twice in late 2025 (`ios` → `tv_simply` → `web_safari`) and is now being forced to a specific player hash on 2026.03 nightlies; anchoring at the call-site level keeps subtitle / audio / metadata behaviour stable across yt-dlp updates instead of inheriting whatever the upstream default of the week is.
+- **Added curl_cffi-backed TLS-fingerprint impersonation.** yt-dlp's `impersonate` option (when curl_cffi is installed) makes the HTTP layer present a real Chrome TLS fingerprint, side-stepping YouTube's soft rate limits and "request looks like a bot" rejections without needing cookies. Pinned `curl_cffi>=0.10,<0.15` — yt-dlp 2026.3.x supports 0.10–0.14 only; on 0.15 every impersonate target shows up as `(unavailable)` and `YoutubeDL(impersonate=...)` raises at construction time. Detection in `ytdlp_common_opts()` builds an `ImpersonateTarget(client='chrome')` once at import time and silently drops the option if curl_cffi is missing or wrong-version.
+
+### Added
+- **README troubleshooting note for Deno.** Since yt-dlp 2025.11.12, YouTube's n-parameter signature solver requires an external JavaScript runtime; without it some videos return missing audio formats. Documented `brew install deno` as the one-step fix. Skipped bundling Deno itself (~60 MB universal2 binary; would roughly double the DMG) since most videos still work without it via fallback clients.
+
+### Notes
+- `setup.py` adds `curl_cffi` to py2app `packages` so its compiled extensions + bundled libs ship inside the .app. The constraint `<0.15` means existing v0.1.17 venvs (which may already have 0.15 pulled by the lax requirement) get downgraded on next `install.sh`.
+
 ## [0.1.17] — 2026-05-12
 
 ### Changed

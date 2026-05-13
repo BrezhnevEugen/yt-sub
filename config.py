@@ -127,3 +127,43 @@ def set_groq_api_key(key: Optional[str]) -> None:
     else:
         cfg.pop("groq_api_key", None)
     save(cfg)
+
+
+# Detect curl_cffi availability for yt-dlp's impersonate option. yt-dlp
+# 2026.3.x checks for curl_cffi 0.10–0.14.x; 0.15+ broke the ABI and
+# yt-dlp drops all impersonate targets to "unavailable". The require-
+# ments pin forces <0.15 so this stays True in practice — but we still
+# probe via yt-dlp's own ImpersonateTarget API rather than just
+# importing curl_cffi, since the curl_cffi import can succeed while
+# yt-dlp refuses to use it.
+try:
+    from yt_dlp.networking.impersonate import ImpersonateTarget as _ImpersonateTarget
+    _IMPERSONATE_CHROME = _ImpersonateTarget(client="chrome")
+except Exception:
+    _IMPERSONATE_CHROME = None
+
+
+def ytdlp_common_opts() -> Dict[str, Any]:
+    """Baseline yt-dlp options shared across every call site.
+
+    - `extractor_args` pins YouTube's `player_client` to `web_safari`.
+      The default flipped twice in late 2025 (ios → tv_simply →
+      web_safari) and yt-dlp's own README points users at extractor-
+      args docs to lock in a client — anchoring here keeps subtitle /
+      audio / playlist / channel fetching consistent across yt-dlp
+      updates.
+    - `impersonate=ImpersonateTarget('chrome')` routes via curl_cffi
+      for a real Chrome TLS fingerprint, slipping past soft rate
+      limits even with no cookies configured. yt-dlp's API expects an
+      `ImpersonateTarget` instance (passing a plain string raises an
+      AssertionError on `_impersonate_target_available`). Skipped
+      when curl_cffi isn't installed or its version is incompatible.
+
+    Spread into each call site's opts dict via `**ytdlp_common_opts()`;
+    per-call keys take precedence on collision (later keys win)."""
+    opts: Dict[str, Any] = {
+        "extractor_args": {"youtube": {"player_client": ["web_safari"]}},
+    }
+    if _IMPERSONATE_CHROME is not None:
+        opts["impersonate"] = _IMPERSONATE_CHROME
+    return opts

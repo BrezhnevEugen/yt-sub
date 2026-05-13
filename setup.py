@@ -48,6 +48,12 @@ OPTIONS = {
         # the py2app bundle (otherwise CERTIFICATE_VERIFY_FAILED on any
         # https call from the frozen Python).
         'certifi',
+        # curl_cffi powers yt-dlp's `impersonate` option — ships a real
+        # Chrome TLS fingerprint that side-steps YouTube's bot detection
+        # without cookies. Native compiled module; py2app needs the full
+        # package so its data files (loader DLLs, CA bundle, etc) come
+        # along.
+        'curl_cffi',
     ],
     # `mcp_server` is a separate entry point (not imported by app.py), so
     # we explicitly include it to pull its imports into the graph too.

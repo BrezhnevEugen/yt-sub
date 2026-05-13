@@ -122,6 +122,18 @@ After wiring, restart your agent host once. Then the agent will call `process_vi
 
 After this, transcripts work for any YouTube video. Re-export when YouTube starts rejecting again (usually weeks later). Full background and edge cases below.
 
+### Optional: install Deno for full YouTube extractor support
+
+Since yt-dlp 2025.11.12, YouTube requires an external JavaScript runtime for the n-parameter signature solving used on newer videos. Without it, some videos silently come back with missing audio formats or "signature extraction failed" errors. **Most videos still work** because yt-dlp falls back to other clients, but the failures are unpredictable.
+
+If you hit them, install Deno once:
+
+```sh
+brew install deno
+```
+
+YT-sub itself doesn't bundle Deno (would double the DMG size for a feature most users never need). The bundled yt-dlp picks it up from `$PATH` automatically — no YT-sub setting to change.
+
 ## Bypassing YouTube's bot-protection (cookies)
 
 Sometimes both transcript backends hit YouTube's IP-based blocking ("Sign in to confirm you're not a bot" / "YouTube is blocking requests from your IP"). This happens to residential IPs that look suspicious to Google — too many requests, datacenter IP ranges, or just bad luck. Pass real browser cookies from a logged-in YouTube session and YouTube treats the request as authenticated, which clears the block.

@@ -3,6 +3,17 @@ google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-api-python-client>=2.100.0
 youtube-transcript-api>=0.6.2
-yt-dlp>=2024.1.1
+# 2026.02.21+ ships the recent YouTube extractor fixes: PO Token
+# detection, Firefox 147+ cookie DB v17, web_safari as the default
+# player_client, and a clean curl_cffi 0.14.x bridge.
+yt-dlp>=2026.2.21
+# curl_cffi gives yt-dlp browser TLS-fingerprint impersonation. Lets us
+# slip past YouTube's soft rate limits even when the user hasn't
+# configured cookies. Capped <0.15 — yt-dlp 2026.3.x supports 0.10–0.14
+# only; with 0.15 all impersonate targets show as unavailable and
+# yt-dlp.YoutubeDL(impersonate=...) raises at construction time.
+# config.ytdlp_common_opts checks the runtime feature at import and
+# skips the option silently if curl_cffi is missing or wrong-version.
+curl_cffi>=0.10,<0.15
 pyobjc-framework-Cocoa>=10.0
 mcp[cli]>=1.2

@@ -107,7 +107,7 @@ def _parse_json3(text: str) -> List[Dict]:
 def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
     import yt_dlp
 
-    from config import get_cookies_file, get_ytdlp_browser
+    from config import get_cookies_file, get_ytdlp_browser, ytdlp_common_opts
 
     url = f"https://www.youtube.com/watch?v={video_id}"
     cookies_file = get_cookies_file()
@@ -118,6 +118,7 @@ def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
     # tries each lang in subtitleslangs and a single 429 from the
     # timedtext endpoint on a missing language can poison the request.
     discover_opts = {
+        **ytdlp_common_opts(),
         "skip_download": True,
         "quiet": True,
         "no_warnings": True,
@@ -153,6 +154,7 @@ def _try_ytdlp(video_id: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         opts = {
+            **ytdlp_common_opts(),
             "skip_download": True,
             "writesubtitles": True,
             "writeautomaticsub": True,

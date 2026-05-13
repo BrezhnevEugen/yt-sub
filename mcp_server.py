@@ -165,6 +165,7 @@ def _resolve_playlist(playlist_url: str, limit: int) -> Tuple[List[str], Optiona
     cookies_file = config.get_cookies_file()
     browser = config.get_ytdlp_browser()
     opts: Dict[str, Any] = {
+        **config.ytdlp_common_opts(),
         "extract_flat": "in_playlist",
         "quiet": True,
         "no_warnings": True,
@@ -309,6 +310,7 @@ def get_channel_info(channel: str, limit: int = 10) -> Dict[str, Any]:
     cookies_file = config.get_cookies_file()
     browser = config.get_ytdlp_browser()
     opts: Dict[str, Any] = {
+        **config.ytdlp_common_opts(),
         "extract_flat": "in_playlist",
         "quiet": True,
         "no_warnings": True,

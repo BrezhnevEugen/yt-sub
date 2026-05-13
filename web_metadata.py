@@ -173,9 +173,10 @@ def _fetch_oembed(video_id: str) -> Dict[str, Any]:
 def _fetch_ytdlp(video_id: str) -> Dict[str, Any]:
     import yt_dlp
 
-    from config import get_cookies_file, get_ytdlp_browser
+    from config import get_cookies_file, get_ytdlp_browser, ytdlp_common_opts
 
     opts = {
+        **ytdlp_common_opts(),
         "skip_download": True,
         "quiet": True,
         "no_warnings": True,

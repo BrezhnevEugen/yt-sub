@@ -34,13 +34,14 @@ def _download_audio(video_id: str, dest: Path) -> Path:
     path. Raises WhisperError on any failure."""
     import yt_dlp
 
-    from config import get_cookies_file, get_ytdlp_browser
+    from config import get_cookies_file, get_ytdlp_browser, ytdlp_common_opts
 
     url = f"https://www.youtube.com/watch?v={video_id}"
     cookies_file = get_cookies_file()
     browser = get_ytdlp_browser()
 
     opts = {
+        **ytdlp_common_opts(),
         # 139 = m4a 48 kbps (smallest), 140 = m4a 128 kbps, then any.
         "format": "139/140/bestaudio[ext=m4a]/bestaudio",
         "outtmpl": str(dest / "%(id)s.%(ext)s"),
